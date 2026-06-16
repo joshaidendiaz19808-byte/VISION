@@ -1,0 +1,4 @@
+- deep-dive AI trading + orderflow (makes ME a better trader, NOT needed to ship VISION)
+- churn / NRR / innovator's dilemma / blitzscaling / reflexivity / vertical-vs-horizontal / PMF (revisit when VISION has real users)
+- churn / NRR / innovator's dilemma / blitzscaling / reflexivity / vertical-vs-horizontal / PMF (revisit when VISION has real users)
+- 'second brain' that ingests everything live (just use Projects + the memory setting for now)
