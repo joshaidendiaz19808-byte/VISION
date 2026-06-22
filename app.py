@@ -38,26 +38,68 @@ def is_dollar_scale(series: pd.Series) -> bool:
 
 def show_verdict(df: pd.DataFrame, out: dict):
     is_real = "REAL" in out["verdict"]
-    color = "green" if is_real else "red"
-    st.markdown(f"**{len(df)} trades analyzed**")
+    accent = "#1D9E75" if is_real else "#E5484D"
+    headline = "REAL" if is_real else "FAKE"
+    sub = "Worth paper trading" if is_real else "Don't trade this yet"
+
     st.markdown(
-        f"<h2 style='color:{color}'>{out['verdict']}</h2>",
+        f"""
+        <div style="background:#1A1D24;border:1px solid {accent}33;
+                    border-left:4px solid {accent};border-radius:10px;
+                    padding:28px 32px;margin:8px 0 24px 0;">
+          <div style="display:flex;align-items:baseline;justify-content:space-between;
+                      flex-wrap:wrap;gap:12px;">
+            <span style="font-size:2.25rem;font-weight:800;color:{accent};
+                        letter-spacing:0.02em;">{headline}</span>
+            <span style="background:{accent}22;color:{accent};font-weight:700;
+                        font-size:0.85rem;padding:6px 14px;border-radius:999px;
+                        border:1px solid {accent}55;">{out['score']}</span>
+          </div>
+          <div style="color:#9CA3AF;font-size:1.05rem;margin-top:4px;">{sub}</div>
+          <div style="color:#6B7280;font-size:0.85rem;margin-top:14px;">
+            {len(df)} trades analyzed
+          </div>
+        </div>
+        """,
         unsafe_allow_html=True,
     )
-    st.metric("Score", out["score"])
+
     if not out["reasons"]:
         st.success("Passed every honesty test. Paper trade it before risking real money.")
-    else:
-        st.markdown("### What's wrong")
-        for reason, fix in zip(out["reasons"], out["fixes"]):
-            with st.expander(reason):
-                st.info(f"**Fix:** {fix}")
+        return
+
+    st.markdown(
+        "<div style='font-weight:700;font-size:1.1rem;margin-bottom:8px;'>What's wrong</div>",
+        unsafe_allow_html=True,
+    )
+    for reason, fix in zip(out["reasons"], out["fixes"]):
+        st.markdown(
+            f"""
+            <div style="background:#1A1D24;border-radius:8px;padding:16px 20px;margin-bottom:12px;">
+              <div style="font-size:1rem;color:#FAFAFA;">
+                <span style="color:#E5484D;font-weight:700;margin-right:8px;">✗</span>{reason}
+              </div>
+              <div style="font-size:0.9rem;color:#9CA3AF;margin-top:8px;padding-left:24px;">
+                {fix}
+              </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
 
 # ── page ──────────────────────────────────────────────────────────────────────
 
 st.set_page_config(page_title="VISION", page_icon="🔍")
-st.title("VISION — Strategy Bullshit Detector")
-st.caption("Upload your trades. Get the truth.")
+st.markdown(
+    """
+    <div style="font-size:2.4rem;font-weight:800;letter-spacing:0.03em;
+                color:#FAFAFA;margin-bottom:0.1rem;">VISION</div>
+    <div style="font-size:1rem;color:#9CA3AF;margin-bottom:1.75rem;">
+        Strategy honesty check. Upload your trades, get the truth.
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
 
 if "use_sample" not in st.session_state:
     st.session_state.use_sample = False
