@@ -168,7 +168,11 @@ turns red. That is the intended failure mode.
 
 ## 11. Status: MK18
 
-All three phases are built, tested, and wired end to end. What does NOT exist:
-a real learned scorer behind `Generator.scorer` (still a rank-IC heuristic), a
-live data feed, and any audio in the "voice" layer (still a text channel).
-Those are the seams that remain. None of them change the architecture.
+All phases are built, tested, and wired end to end, and the `Generator.scorer`
+seam is closed — `core/scorer.py` holds gradient-boosted trees that predict
+out-of-sample decay, fitted and calibrated.
+
+What does NOT exist: a corpus of REAL feature history to fit that scorer on (it
+currently learns from a synthetic generator, so it knows that generator's decay
+patterns and nobody else's), a live data feed, and any audio in the "voice"
+layer. Those are the seams that remain. None of them change the architecture.

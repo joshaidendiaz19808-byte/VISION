@@ -58,8 +58,15 @@ wins.
   (vol targeting + an exactly-solved portfolio variance budget), and drawdown
   (hard halt + linear de-risking) — in closed-form NumPy with zero LLM logic,
   covered by 1,578 pytest cases in `tests/test_risk_arbiter.py`.
-  The seam left open is `Generator.scorer`: a rank-IC heuristic stands where the
-  learned model goes. The contract around it is what matters and it is fixed.
+  The `Generator.scorer` seam is now closed by `core/scorer.py`: gradient-boosted
+  regression trees in numpy that predict **out-of-sample** IC from in-sample
+  meta-features — a model of decay, not of edge. 29% lower error than in-sample
+  |IC| as a predictor, calibrated on held-out rows, and its top feature is
+  `ic_decay` rather than apparent edge. **It is trained on a SYNTHETIC corpus**,
+  so it has learned this generator's decay patterns, not any market's; refit on
+  real feature history before the number means anything. Rule 1 is now tested
+  rather than asserted: a deliberately corrupted scorer returning 0.99 on pure
+  noise gets 6 features to the top of the queue and 0 past the red team.
 - **Phase 2 — built.** Two engines. The discrete SCM (`do()` interventions,
   twin-network counterfactuals) plus a continuous-time SDE layer: order book
   microstructure (flow-driven permanent impact, Roll noise, flow-widened
