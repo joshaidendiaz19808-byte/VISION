@@ -49,7 +49,12 @@ wins.
 
 ## Phase status (MK18)
 
-- **Phase 1 — built.** All three nodes run, are tested, and are wired end to end.
+- **Phase 1 — built and hardened.** All three nodes run, are tested, and are
+  wired end to end. The arbiter now enforces all three limit families the spec
+  names — position size (gross cap, confidence scaling, quarter-Kelly), variance
+  (vol targeting + an exactly-solved portfolio variance budget), and drawdown
+  (hard halt + linear de-risking) — in closed-form NumPy with zero LLM logic,
+  covered by 1,578 pytest cases in `tests/test_risk_arbiter.py`.
   The seam left open is `Generator.scorer`: a rank-IC heuristic stands where the
   learned model goes. The contract around it is what matters and it is fixed.
 - **Phase 2 — built.** SCM with `do()` interventions and twin-network
@@ -74,4 +79,8 @@ wins.
 - **Dependencies:** `numpy` for the engine, `pandas` + `streamlit` for the app.
   Adding one is an architecture decision, not a convenience.
 - Every module runs standalone and prints a demo of what it does.
-  Verify with `python3 stark-core/tests/test_smoke.py` before committing.
+- Verify with `pytest stark-core/tests/ -q` before committing (the smoke file also
+  runs standalone: `python3 stark-core/tests/test_smoke.py`).
+- **A risk cap is approached from below, never from above.** Sizes are floored,
+  not rounded — rounding 0.070080 up to 0.0701 breaches a budget, and "by a hair"
+  is not a category the arbiter recognises.

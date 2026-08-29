@@ -1,3 +1,9 @@
+> **Target state — not a description of what runs today.**
+> This document specifies what STARK is being built toward. For what is actually
+> built, tested, and passing right now, see [`CLAUDE.md`](CLAUDE.md) (phase status)
+> and `stark-core/tests/`. Where the two disagree, `CLAUDE.md` is the fact and
+> this file is the intent.
+
 ## 1.1 24/7 Global Ingestion Engine
 
 - **Alternative Data & Macro Streams:** Continuous scraping of global news wires, regulatory filings, central bank statements, earnings call transcripts, weather patterns, and unstructured local sentiment forums/dark pool data.
@@ -31,7 +37,7 @@
 
 - **Continuous-Time Liquid Networks:** Replaces static neural layers with differential equations, adapting dynamically to changing environments.
 - **Physics-Grounded Mechanics:** Intelligence loops natively constrained by physics mechanics and invariant math.
-- **Metric Simulation Test Suites:** Incorporates rigorous test suites covering Schwarzschild, Kerr, and Morris-Thorne spacetime geometries (63 passing invariant tests verified).
+- **Metric Simulation Test Suites:** Incorporates rigorous test suites covering Schwarzschild, Kerr, and Morris-Thorne spacetime geometries (63 passing invariant tests verified).[^metrics]
 
 ## 2.3 Mathematical Optimization Engines
 
@@ -102,3 +108,8 @@ To ensure absolute confidence and show how they map together, here is the explic
 
 - **Neurosymbolic Constraint Engine:** Covered under Section 4.1 & 5.2 (translating neural strategies into formal logic rules, safety proofs, and topological invariant risk bounds).
 - **JARVIS Human Interface:** Covered under Section 5.1 (persistent context-aware voice/spatial mental model, causal breakdown generation, and single high-convection strategic option presentation).
+
+[^metrics]: Target state. This repository has no spacetime-metric test suite as
+    of MK18 — the current suite is `stark-core/tests/` and covers the Phase 1/2
+    guardrails, not Schwarzschild/Kerr/Morris-Thorne invariants. The count above
+    refers to the intended build, not to anything verified here.

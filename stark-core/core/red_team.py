@@ -26,7 +26,7 @@ if __package__ in (None, ""):  # run as a script: put the stark-core/ root on th
     import pathlib as _pl, sys as _sys
     _sys.path.insert(0, str(_pl.Path(__file__).resolve().parents[1]))
 
-from core.generator import Hypothesis, rank_ic
+from core.generator import Hypothesis, estimate_edge_bps, rank_ic
 
 # An attack this severe kills the hypothesis outright.
 KILL_THRESHOLD = 0.6
@@ -152,13 +152,12 @@ def attack_permutation(x: np.ndarray, y: np.ndarray, n_sims: int = 2000, seed: i
 
 def attack_cost(y: np.ndarray, direction: int, ic: float, cost_bps: float = 5.0) -> Attack:
     """
-    Turn a rank correlation into a crude bps expectation and pay the toll.
+    Pay the toll on the shared edge estimate.
 
-    Rough but honest: expected edge ~ |IC| x the spread of returns.
-    Labelled est. because that is what it is.
+    The estimator lives in generator.estimate_edge_bps so that the red team, the
+    arbiter and JARVIS all quote the same number. Labelled est. because it is.
     """
-    spread_bps = float(np.std(y)) * 10_000.0
-    gross = abs(ic) * spread_bps
+    gross = estimate_edge_bps(ic, y)
     net = gross - cost_bps
     if net <= 0:
         return Attack("cost", False, 0.85,

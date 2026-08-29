@@ -93,6 +93,8 @@ class JarvisNode:
         tensor: MarketTensor | None = None,
         graph: CausalGraph | None = None,
         book_drawdown: float = 0.0,
+        book_volatility_bps: float = 0.0,
+        book_weight: float = 0.0,
         requested_size: float = 0.05,
     ) -> Iterator[Utterance]:
         """Yield the whole reasoning chain, in order, as it is produced."""
@@ -145,7 +147,7 @@ class JarvisNode:
 
         # Level 2 - what would happen if we acted?
         best, report, confidence = max(survivors, key=lambda s: s[2])
-        edge_bps = self._edge_bps(features[best.feature], forward_returns) - self.cost_bps
+        edge_bps = best.edge_bps - self.cost_bps   # est. gross, net of assumed cost
         if graph is not None:
             mv = Multiverse(graph, outcome="pnl_bps").explore(
                 {
@@ -172,6 +174,9 @@ class JarvisNode:
             n_trades=best.n_obs,
             survived_red_team=report.survived,
             current_drawdown=book_drawdown,
+            volatility_bps=best.vol_bps,
+            book_volatility_bps=book_volatility_bps,
+            book_weight=book_weight,
         )
         ruling: Ruling = self.arbiter.rule(proposal)
         for violation in ruling.violations:
@@ -179,9 +184,13 @@ class JarvisNode:
                             {"hard": violation.hard})
         for note in ruling.notes:
             yield self._say("RULING", 1, note, {"note": True})
-        yield self._say("RULING", 1,
-                        f"{ruling.decision} - max size {ruling.max_size_fraction:.3f} of book.",
-                        {"decision": ruling.decision, "size": ruling.max_size_fraction})
+        yield self._say(
+            "RULING", 1,
+            f"{ruling.decision} - max size {ruling.max_size_fraction:.3f} of book"
+            + (f", bound by {ruling.binding_constraint}." if not ruling.vetoed else "."),
+            {"decision": ruling.decision, "size": ruling.max_size_fraction,
+             "binding": ruling.binding_constraint},
+        )
 
         # Level 2 - what did we learn, and what next?
         self.inference.believe(best.feature, mean=edge_bps, variance=max(abs(edge_bps), 1.0))
@@ -214,12 +223,6 @@ class JarvisNode:
         size = f" Risk permits {ruling.max_size_fraction:.1%} of the book"
         size += " (clamped)." if ruling.decision == "CLAMP" else "."
         return head + size + f" Recommended next move: {next_action}."
-
-    def _edge_bps(self, values: Sequence[float], fwd: Sequence[float]) -> float:
-        """Same crude estimator the red team's cost attack uses. Est., and labelled so."""
-        from core.generator import rank_ic
-        return float(abs(rank_ic(np.asarray(values, float), np.asarray(fwd, float)))
-                     * float(np.std(fwd)) * 10_000.0)
 
     def _say(self, channel: str, level: int, text: str, payload: dict | None = None) -> Utterance:
         u = Utterance(channel, level, text, payload or {})

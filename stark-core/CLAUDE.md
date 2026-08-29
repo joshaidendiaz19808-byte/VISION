@@ -107,7 +107,14 @@ is allowed to talk conviction back up.
 
 ## 8. Verification
 
-`python3 stark-core/tests/test_smoke.py` (or `pytest stark-core/tests`).
+`pytest stark-core/tests/ -q` — 1,606 cases. The smoke file also runs standalone:
+`python3 stark-core/tests/test_smoke.py`.
+
+`tests/test_risk_arbiter.py` is the Phase 1 guardrail suite: closed-form checks
+on the math, one case per way a proposal can be invalid, and a 384-proposal grid
+asserting that no input — including nonsense — can produce a size that is
+negative, NaN, above the gross cap, larger than requested, or in breach of the
+variance budget.
 
 The suite is not only a smoke test - it enforces the rules above in code:
 the veto is unappealable, confidence only ever falls, the arbiter imports

@@ -42,12 +42,15 @@ class Hypothesis:
     raw_ic: float           # unshrunk rank correlation
     n_obs: int
     n_considered: int       # how many features were searched to find this one
+    edge_bps: float = 0.0   # est. GROSS edge - costs are the red team's business
+    vol_bps: float = 0.0    # per-period sigma, the arbiter's variance input
     tags: tuple[str, ...] = ()
 
     def __str__(self) -> str:
         return (
             f"[{self.id}] {self.claim}\n"
             f"        prior {self.prior:.2f} | rank IC {self.raw_ic:+.3f} | "
+            f"est. {self.edge_bps:.1f} bps at {self.vol_bps:.0f} bps vol | "
             f"n={self.n_obs} | searched {self.n_considered} features"
         )
 
@@ -92,6 +95,32 @@ def shrink(ic: float, n: int, k: int = SHRINKAGE_N) -> float:
     if n <= 0:
         return 0.0
     return float(abs(ic) * n / (n + k))
+
+
+def estimate_edge_bps(ic: float, forward_returns: np.ndarray) -> float:
+    """
+    Crude but honest gross-edge estimate: |IC| x the spread of returns, in bps.
+
+    Rank correlation says how reliably a feature orders returns, not how much
+    money that ordering is worth; multiplying by return dispersion converts one
+    into the other. It is an estimate and every caller labels it `est.` - but it
+    is defined ONCE, here, so the red team, the arbiter and JARVIS can never
+    quietly disagree about what the edge is.
+    """
+    y = np.asarray(forward_returns, dtype=float)
+    y = y[np.isfinite(y)]
+    if y.size == 0:
+        return 0.0
+    return float(abs(ic) * float(np.std(y)) * 10_000.0)
+
+
+def estimate_vol_bps(forward_returns: np.ndarray) -> float:
+    """Per-period sigma of the strategy's returns, in bps. The arbiter's variance input."""
+    y = np.asarray(forward_returns, dtype=float)
+    y = y[np.isfinite(y)]
+    if y.size < 2:
+        return 0.0
+    return float(np.std(y) * 10_000.0)
 
 
 def _heuristic_intuition(name: str, values: np.ndarray, fwd: np.ndarray) -> float:
@@ -168,6 +197,8 @@ class Generator:
                     raw_ic=round(ic, 4),
                     n_obs=n,
                     n_considered=n_considered,
+                    edge_bps=round(estimate_edge_bps(ic, fwd), 4),
+                    vol_bps=round(estimate_vol_bps(fwd), 4),
                     tags=("unverified",),
                 )
             )
@@ -193,7 +224,7 @@ if __name__ == "__main__":
     n = 400
     real = rng.normal(0, 1, n)
     noise = {f"noise_{i}": rng.normal(0, 1, n) for i in range(6)}
-    fwd = 0.30 * real + rng.normal(0, 1, n)
+    fwd = (0.30 * real + rng.normal(0, 1, n)) * 0.01   # ~1% per-bar returns
 
     gen = Generator(seed=1)
     ideas = gen.generate({"real_signal": real, **noise}, fwd)
