@@ -21,3 +21,22 @@ The user brings their data + strategy. We bring the truth.
 
 ## Build log:
 Day 1: __
+
+## STARK MK18 (`stark-core/`)
+VISION judges a finished strategy. STARK is the engine that proposes them and
+decides what they're allowed to risk. Four levels, each one only ever able to
+*reduce* conviction:
+
+| Level | Module | Job |
+|---|---|---|
+| 1 | `core/generator.py` | proposes falsifiable claims, shrunk by sample size |
+| 1 | `core/red_team.py` | six adversarial attacks; survivors only |
+| 1 | `core/risk_arbiter.py` | hard symbolic guardrails — the veto is final |
+| 2 | `simulation/causal_engine.py` | do() interventions + counterfactual branches |
+| 2 | `simulation/active_inference.py` | surprise → belief update → what to test next |
+| 3 | `tensors/market_tensors.py` | temperature / entropy / energy / pressure fields |
+| 4 | `interface/jarvis_node.py` | narrates the whole chain in plain English |
+
+Read `stark-core/CLAUDE.md` first — it holds the architecture rules.
+Every module runs standalone (`python3 stark-core/core/red_team.py`).
+Tests: `python3 stark-core/tests/test_smoke.py`
