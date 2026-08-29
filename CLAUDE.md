@@ -9,6 +9,7 @@
 - **Phase 1:** Build the 3-node adversarial core (Generator -> Red Team -> Risk Arbiter).
 - **Phase 2:** Implement the Generative Causal Simulator and Active Inference loop.
 - **Phase 3:** Scale up to Energy-Based Tensors and Quantum-Inspired Stochastic Branching.
+- **Phase 4:** Omnipresent sensory ingestion and dual-loop execution.
 
 ---
 
@@ -84,6 +85,17 @@ wins.
   contraction being O(N·d²) instead of d^N. Exact for chains and trees only;
   loopy graphs would need an approximation this file does not implement. Do not
   describe it as more than that.
+- **Phase 4 — built.** `ingestion/` carries the senses: a polite cached HTTP
+  layer with mandatory provenance, a live arXiv crawler, point-in-time macro
+  series that refuse to hand out numbers before their release date, SAR
+  floating-roof tank geometry with honest error propagation, and AIS decoding
+  with gap screening. `execution/dual_loop.py` carries the hands: a deterministic
+  reflex loop on the hot path and an ego loop that genuinely restructures
+  kernels at runtime — composing whitelisted operators, never generating code —
+  behind four gates, one of which is the risk arbiter itself. **No imagery
+  pipeline, no AIS feed, no news scraper, and no live broker adapter.** Those
+  need credentials, contracts and a human signature, and none of them is
+  written here.
 
 ## Standing instructions
 
@@ -95,7 +107,15 @@ wins.
   docstring and the honest mechanic in the code. A name must never oversell what
   a function does.
 - **STARK holds no capital.** It emits rulings. It places no orders, holds no
-  keys, and makes no network calls. Execution lives outside this tree.
+  keys, and makes no network calls. Execution lives outside this tree — in
+  `execution/`, which emits *intents*; the only adapter records them and sends
+  nothing. Ingestion, which does touch the network, lives in `ingestion/`.
+- **The arbiter governs what gets SIZED, not what gets THOUGHT.** Gating a
+  search by a risk limit is the same category error as letting a hypothesis
+  override one, and it fails just as badly — quietly, by never improving.
+- **No generated code is ever executed.** The ego loop rewrites kernels by
+  composing whitelisted operators, never by `exec()`-ing source. Code nobody has
+  read cannot be reviewed before it trades or reproduced after it does.
 - **Dependencies:** `numpy` throughout, `scipy` for the simulation layer only
   (integration, MLE, linear algebra), `pandas` + `streamlit` for the app.
   `tensors/` and `core/risk_arbiter.py` stay numpy-only — the substrate and the
