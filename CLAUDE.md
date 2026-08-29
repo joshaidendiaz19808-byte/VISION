@@ -65,12 +65,25 @@ wins.
   SciPy with real error bars, not hand-specified. `PredictionErrorLoop` closes
   the real-time loop: predict one step ahead, observe, correct — on a regime
   shift it cuts RMSE 21% and cumulative free energy 10x against the same model
-  frozen. Open seam: the SCM's *graph structure* is still hand-specified —
-  parameters are fitted, edges are not discovered.
-- **Phase 3 — partial.** Energy-based tensors exist (`F = U(1−TS)`, temperature,
-  entropy, pressure). Quantum-inspired stochastic branching does **not** exist
-  yet — `Multiverse` branches are classical and deterministic given a seed. Do
-  not describe it as more than that.
+  frozen. `structure_learning.py` closes the last seam: the graph itself is
+  discovered (PC skeleton → collider orientation → Meek propagation), and where
+  observation cannot orient an edge it says so and names the experiment —
+  interventions through `do()` finish the job.
+- **Phase 3 — built.** Three layers in `tensors/`. Energy-based fields
+  (`F = U(1−TS)`, temperature, entropy, pressure). `CapitalField` relaxes
+  capital, hypotheses and risk limits to thermodynamic equilibrium by minimizing
+  `F = U − TS` under hard caps enforced by projection — it reproduces the
+  analytic Boltzmann solution where one exists, and no temperature can buy a
+  weight past its cap. `MarketStateNetwork` contracts a tensor network over
+  future market states: 2^40 joint configurations queried in milliseconds
+  without enumerating one, verified exact against brute force.
+  **On "quantum-inspired":** the math (matrix product states, bond dimension,
+  transfer matrices, correlation length) is borrowed from quantum many-body
+  physics and that is the entire borrowing. No superposition, no entanglement,
+  no quantum hardware, no quantum speedup — the win is structural, from chain
+  contraction being O(N·d²) instead of d^N. Exact for chains and trees only;
+  loopy graphs would need an approximation this file does not implement. Do not
+  describe it as more than that.
 
 ## Standing instructions
 
