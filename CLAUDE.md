@@ -111,6 +111,32 @@ wins.
   edge, no overnight run, stale book — and a veto produces no recommendation
   rather than a softened one.
 
+## Isolation: this STARK is not the other STARKs
+
+**This repository is STARK MK18 and it stands alone.** The operator maintains
+other STARK models elsewhere — options flow, GEX / dealer gamma, volume profile.
+Those are separate systems in separate places. This tree has never contained any
+of them and must not start.
+
+Concretely, for any future session:
+
+- **Do not import, vendor, copy, or re-implement code from another STARK.** Not
+  a module, not a function, not a "just this one helper".
+- **Do not merge branches, files, or specs across STARK variants.** If a request
+  seems to assume this repo already has options-flow or GEX or volume-profile
+  logic, it does not — say so and ask, rather than building a bridge nobody
+  asked for.
+- **Do not add options, Greeks, dealer positioning, or order-book volume
+  distribution to this tree** unless the operator explicitly asks for it here,
+  in this repo, by name.
+- `MASTER_SPEC.md` is THIS system's target state. It is not a shared spec and
+  does not describe the other models.
+
+If integration is ever wanted, the seam is `Generator.generate(features, ...)` —
+those signals would enter as *features* and face the same six red-team attacks
+as anything else, including the multiple-testing charge. That is a decision for
+the operator to make explicitly, not a default to drift into.
+
 ## Standing instructions
 
 - **Never report a confidence the data cannot justify.** Small samples get
