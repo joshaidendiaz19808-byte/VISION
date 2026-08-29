@@ -21,12 +21,29 @@ Then it plans. Expected free energy of an action has two terms:
 Minimizing their sum is why STARK will sometimes run a small test it does not
 expect to profit from: an experiment that resolves a belief is worth paying for.
 Curiosity, budgeted.
+
+REAL TIME (PredictionErrorLoop, lower half of this file)
+  The loop above learns from whatever you hand it. The loop below learns from a
+  running process, one observation at a time: predict the next value, see it,
+  measure the error, correct. That is the difference between a backtest and a
+  filter.
+
+  A backtest fits parameters on history and freezes them. It cannot notice that
+  the world moved, because nothing in it is looking. A filter carries an
+  explicit belief about its own bias and revises that belief every step, so a
+  regime change shows up as a run of surprise and gets absorbed - in seconds,
+  not at the next refit.
+
+  The process being tracked only has to satisfy `PredictiveProcess`: it must be
+  able to say what it expects next and how sure it is. Anything that cannot
+  state a predictive distribution cannot have its errors measured, and anything
+  whose errors cannot be measured has no business allocating capital.
 """
 from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
-from typing import Iterable, Mapping
+from typing import Iterable, Mapping, Protocol, Sequence, runtime_checkable
 
 import numpy as np
 
@@ -174,6 +191,205 @@ class ActiveInferenceLoop:
         return "\n".join(lines)
 
 
+# ═════════════════════════════════════════════════════════════════════════════
+# REAL TIME: prediction error minimization on a running process
+# ═════════════════════════════════════════════════════════════════════════════
+
+@runtime_checkable
+class PredictiveProcess(Protocol):
+    """
+    Anything that can state what it expects next.
+
+    Structural typing on purpose: this file must not import the simulation
+    engine (they are the same level - see CLAUDE.md rule 1), and it does not
+    need to. A process satisfies this contract by having the method, not by
+    inheriting anything. An SDE, a fitted regression, a lookup table and a
+    constant all qualify, and the loop treats them identically.
+    """
+
+    def predict(self, x: np.ndarray, dt: float) -> tuple[np.ndarray, np.ndarray]:
+        """Return (mean, variance) of the next observation given the current state."""
+        ...
+
+
+@dataclass(frozen=True)
+class Step:
+    """One predict-observe-correct cycle."""
+
+    t: float
+    predicted: float
+    observed: float
+    variance: float
+    error: float
+    surprise: float
+    bias: float
+
+    @property
+    def z(self) -> float:
+        """Standardised error. If the model's variance is honest, these are ~N(0,1)."""
+        return self.error / math.sqrt(max(self.variance, 1e-12))
+
+
+@dataclass
+class OnlineResult:
+    """What a run of the filter actually established."""
+
+    steps: list[Step] = field(default_factory=list)
+
+    @property
+    def n(self) -> int:
+        return len(self.steps)
+
+    @property
+    def rmse(self) -> float:
+        if not self.steps:
+            return float("nan")
+        return float(np.sqrt(np.mean([s.error ** 2 for s in self.steps])))
+
+    @property
+    def mean_surprise(self) -> float:
+        return float(np.mean([s.surprise for s in self.steps])) if self.steps else float("nan")
+
+    @property
+    def cumulative_free_energy(self) -> float:
+        """Total surprise. The quantity the whole architecture exists to reduce."""
+        return float(np.sum([s.surprise for s in self.steps])) if self.steps else float("nan")
+
+    @property
+    def calibration(self) -> float:
+        """
+        SD of the standardised errors. 1.0 means the model's stated uncertainty
+        is the truth. Above 1: overconfident, it is more wrong than it admits.
+        Below 1: underconfident, it is hedging.
+        """
+        return float(np.std([s.z for s in self.steps])) if self.steps else float("nan")
+
+    @property
+    def final_bias(self) -> float:
+        return self.steps[-1].bias if self.steps else 0.0
+
+    def drifting(self, window: int = 20, threshold: float = 2.5) -> bool:
+        """
+        Is the model wrong in one direction lately?
+
+        A run of same-signed errors is the signature of a regime change: noise
+        alternates, bias does not. This is what tells STARK the model itself
+        needs looking at, rather than just its parameters.
+        """
+        if self.n < window:
+            return False
+        recent = [s.error for s in self.steps[-window:]]
+        return abs(float(np.mean(recent)) / (float(np.std(recent)) / math.sqrt(window) + 1e-12)) > threshold
+
+    def __str__(self) -> str:
+        return (f"{self.n} steps | RMSE {self.rmse:.4f} | mean surprise {self.mean_surprise:.3f} "
+                f"| calibration {self.calibration:.2f} | bias {self.final_bias:+.4f}"
+                + ("  <- DRIFTING" if self.drifting() else ""))
+
+
+class PredictionErrorLoop:
+    """
+    Online filter: predict one step ahead, observe, correct. Repeat forever.
+
+    The correction is a belief, not a refit. The loop holds a Gaussian belief
+    over an additive bias term - "how wrong is this model, right now, in which
+    direction" - and updates it from every observation using the same conjugate
+    step the offline loop uses. The process itself is never mutated, so the
+    mechanism stays what it was fitted to be and the adaptation stays visible
+    and auditable as a single number.
+
+    `adapt=False` gives you the backtest: a frozen model that predicts and never
+    learns. It is here so the two can be compared honestly on the same data
+    rather than asserted about.
+    """
+
+    def __init__(
+        self,
+        process: PredictiveProcess,
+        dt: float,
+        observe_index: int = 0,
+        adapt: bool = True,
+        bias_variance: float = 1.0,
+        learning_variance: float | None = None,
+    ) -> None:
+        self.process = process
+        self.dt = float(dt)
+        self.observe_index = int(observe_index)
+        self.adapt = bool(adapt)
+        self.inference = ActiveInferenceLoop()
+        self.inference.believe("bias", 0.0, bias_variance)
+        self.learning_variance = learning_variance
+        self.result = OnlineResult()
+        self._t = 0.0
+
+    @property
+    def bias(self) -> Belief:
+        return self.inference.beliefs["bias"]
+
+    def step(self, state: Sequence[float] | float, observation: float) -> Step:
+        """
+        One cycle. Call it as data arrives - this is the real-time entry point.
+
+        `state` is where the process is now; `observation` is what actually
+        happened one dt later.
+        """
+        x = np.atleast_1d(np.asarray(state, dtype=float))
+        mean, var = self.process.predict(x, self.dt)
+        mean = float(np.atleast_1d(mean)[self.observe_index])
+        var = float(max(np.atleast_1d(var)[self.observe_index], 1e-12))
+
+        bias = self.bias.mean if self.adapt else 0.0
+        predicted = mean + bias
+        error = float(observation) - predicted
+        surprise = float(0.5 * math.log(2 * math.pi * var) + error ** 2 / (2 * var))
+
+        if self.adapt:
+            # the observation implies this bias: whatever closes the gap
+            implied = self.bias.mean + error
+            self.inference.observe(Observation("bias", implied,
+                                               variance=self.learning_variance or var))
+
+        self._t += self.dt
+        step = Step(self._t, predicted, float(observation), var, error, surprise, bias)
+        self.result.steps.append(step)
+        return step
+
+    def run(self, series: Sequence[float], states: Sequence[Sequence[float]] | None = None) -> OnlineResult:
+        """
+        Filter a whole series. Equivalent to calling step() as each point lands -
+        no lookahead anywhere, which is the property that makes this a filter
+        and not a fit.
+        """
+        y = np.asarray(series, dtype=float)
+        if len(y) < 2:
+            raise ValueError("need at least two observations to predict anything")
+        for i in range(len(y) - 1):
+            state = y[i] if states is None else states[i]
+            self.step(state, float(y[i + 1]))
+        return self.result
+
+
+def compare_online_vs_static(
+    process: PredictiveProcess,
+    series: Sequence[float],
+    dt: float,
+    observe_index: int = 0,
+) -> dict[str, OnlineResult]:
+    """
+    Run the same model over the same data twice: frozen, and adapting.
+
+    This is the experiment behind the claim "minimize prediction error in real
+    time instead of running a static backtest". It is cheap to run and it is
+    falsifiable - if adaptation does not lower cumulative free energy on YOUR
+    data, then on your data it does not help, and you should know that before
+    building on it.
+    """
+    return {
+        "static": PredictionErrorLoop(process, dt, observe_index, adapt=False).run(series),
+        "online": PredictionErrorLoop(process, dt, observe_index, adapt=True).run(series),
+    }
+
+
 if __name__ == "__main__":
     print("STARK MK18 - active inference demo\n")
     loop = ActiveInferenceLoop()
@@ -211,3 +427,35 @@ if __name__ == "__main__":
     print(f"curiosity dialled to {loop.epistemic_weight:.1f} - STARK pays to learn instead:")
     show(loop)
     print("Same beliefs, same actions. Only the price of information changed.")
+
+    # ── real time: filter vs backtest ────────────────────────────────────────
+    print("\n" + "=" * 74)
+    print(" REAL TIME: prediction error minimization vs a static backtest")
+    print("=" * 74)
+
+    import pathlib as _pl, sys as _sys
+    _sys.path.insert(0, str(_pl.Path(__file__).resolve().parents[1]))
+    from simulation.causal_engine import OrnsteinUhlenbeck  # demo only - the loop needs no import
+
+    dt = 0.05
+    calm = OrnsteinUhlenbeck(theta=2.0, mu=0.0, sigma=0.5)
+    first = calm.integrate(600, dt, seed=4)["x"]
+    # the world moves: the level it reverts to shifts from 0 to +3 and nobody tells us
+    second = OrnsteinUhlenbeck(theta=2.0, mu=3.0, sigma=0.5, x0=float(first[-1])).integrate(600, dt, seed=5)["x"]
+    series = np.concatenate([first, second[1:]])
+
+    print("\n  A model fitted when mu=0. Halfway through, the world moves to mu=3.")
+    print("  Same model, same data, run two ways:\n")
+    results = compare_online_vs_static(calm, series, dt)
+    for name, r in results.items():
+        label = "static (backtest)" if name == "static" else "online (filter)"
+        print(f"  {label:<20} {r}")
+
+    static, online = results["static"], results["online"]
+    print(f"\n  RMSE {static.rmse:.4f} -> {online.rmse:.4f} "
+          f"({(1 - online.rmse / static.rmse) * 100:.0f}% lower)")
+    print(f"  cumulative free energy {static.cumulative_free_energy:+.0f} -> "
+          f"{online.cumulative_free_energy:+.0f} (lower is better)")
+    print(f"  the frozen model is still biased at the end ({static.final_bias:+.3f} by construction);")
+    print(f"  the filter has absorbed the shift into a bias of {online.final_bias:+.3f}.")
+    print("\n  The backtest cannot notice the world moved. Nothing in it is looking.")

@@ -22,7 +22,7 @@ Level 1  core/          generate → attack → arbitrate       (what we DO)
 | Package       | May import from                       |
 |---------------|---------------------------------------|
 | `core/`       | stdlib, numpy, other `core/` modules  |
-| `simulation/` | the above + `core/`                   |
+| `simulation/` | the above + `core/` + scipy           |
 | `tensors/`    | stdlib, numpy **only** (it is substrate — it depends on nothing) |
 | `interface/`  | anything below it                     |
 
@@ -69,8 +69,11 @@ anecdote.
 - STARK **never** places an order, holds a key, or talks to a broker. It emits
   *rulings*; execution lives outside this tree and is somebody else's blast radius.
 - No network calls inside `stark-core/`. Data arrives as arrays passed in.
-- Dependencies: `numpy` only. Adding a dependency is an architecture decision,
-  not a convenience.
+- Dependencies: `numpy` everywhere; `scipy` in `simulation/` only. `tensors/`
+  and `core/risk_arbiter.py` are numpy-only and stay that way. Adding a
+  dependency is an architecture decision, not a convenience.
+- Euler-Maruyama is weak order 1: keep `theta * dt <= 0.02` for a mean-reverting
+  process, or the integrator biases the very thing you are trying to measure.
 
 ## 6. Conventions
 
@@ -107,7 +110,7 @@ is allowed to talk conviction back up.
 
 ## 8. Verification
 
-`pytest stark-core/tests/ -q` — 1,606 cases. The smoke file also runs standalone:
+`pytest stark-core/tests/ -q` — 1,649 cases. The smoke file also runs standalone:
 `python3 stark-core/tests/test_smoke.py`.
 
 `tests/test_risk_arbiter.py` is the Phase 1 guardrail suite: closed-form checks
@@ -115,6 +118,14 @@ on the math, one case per way a proposal can be invalid, and a 384-proposal grid
 asserting that no input — including nonsense — can produce a size that is
 negative, NaN, above the gross cap, larger than requested, or in breach of the
 variance budget.
+
+`tests/test_simulation.py` is the Phase 2 suite. It tests assumptions rather
+than outputs: the integrator against analytic OU moments, the fitter by planting
+parameters and recovering them within their own error bars, each model against
+the physical claim it makes (delay delays, spreads widen with flow, cost is
+concave in size, a longer lead time hurts more than a demand shock), branches
+against the requirement that they differ by the action and not by luck, and the
+filter against the frozen model it claims to beat.
 
 The suite is not only a smoke test - it enforces the rules above in code:
 the veto is unappealable, confidence only ever falls, the arbiter imports

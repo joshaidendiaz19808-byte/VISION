@@ -57,9 +57,16 @@ wins.
   covered by 1,578 pytest cases in `tests/test_risk_arbiter.py`.
   The seam left open is `Generator.scorer`: a rank-IC heuristic stands where the
   learned model goes. The contract around it is what matters and it is fixed.
-- **Phase 2 — built.** SCM with `do()` interventions and twin-network
-  counterfactuals; free-energy belief updates driving action selection. Open
-  seam: the causal graph is hand-specified, not fitted from data.
+- **Phase 2 — built.** Two engines. The discrete SCM (`do()` interventions,
+  twin-network counterfactuals) plus a continuous-time SDE layer: order book
+  microstructure (flow-driven permanent impact, Roll noise, flow-widened
+  spreads, square-root execution cost) and a stochastic delay differential
+  equation for supply chains. Parameters are fitted by maximum likelihood in
+  SciPy with real error bars, not hand-specified. `PredictionErrorLoop` closes
+  the real-time loop: predict one step ahead, observe, correct — on a regime
+  shift it cuts RMSE 21% and cumulative free energy 10x against the same model
+  frozen. Open seam: the SCM's *graph structure* is still hand-specified —
+  parameters are fitted, edges are not discovered.
 - **Phase 3 — partial.** Energy-based tensors exist (`F = U(1−TS)`, temperature,
   entropy, pressure). Quantum-inspired stochastic branching does **not** exist
   yet — `Multiverse` branches are classical and deterministic given a seed. Do
@@ -76,8 +83,11 @@ wins.
   a function does.
 - **STARK holds no capital.** It emits rulings. It places no orders, holds no
   keys, and makes no network calls. Execution lives outside this tree.
-- **Dependencies:** `numpy` for the engine, `pandas` + `streamlit` for the app.
-  Adding one is an architecture decision, not a convenience.
+- **Dependencies:** `numpy` throughout, `scipy` for the simulation layer only
+  (integration, MLE, linear algebra), `pandas` + `streamlit` for the app.
+  `tensors/` and `core/risk_arbiter.py` stay numpy-only — the substrate and the
+  veto carry no optional weight. Adding a dependency is an architecture
+  decision, not a convenience.
 - Every module runs standalone and prints a demo of what it does.
 - Verify with `pytest stark-core/tests/ -q` before committing (the smoke file also
   runs standalone: `python3 stark-core/tests/test_smoke.py`).
