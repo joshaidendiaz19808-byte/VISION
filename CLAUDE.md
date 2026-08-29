@@ -10,6 +10,8 @@
 - **Phase 2:** Implement the Generative Causal Simulator and Active Inference loop.
 - **Phase 3:** Scale up to Energy-Based Tensors and Quantum-Inspired Stochastic Branching.
 - **Phase 4:** Omnipresent sensory ingestion and dual-loop execution.
+- **Phase 5:** The J.A.R.V.I.S. interface — persistent, context-aware, and
+  structurally unable to act without a named human's approval.
 
 ---
 
@@ -96,6 +98,18 @@ wins.
   pipeline, no AIS feed, no news scraper, and no live broker adapter.** Those
   need credentials, contracts and a human signature, and none of them is
   written here.
+- **Phase 5 — built.** `knowledge_graph.py` is JARVIS's memory: a typed graph
+  where every edge records how it came to be believed, and causal queries may
+  only walk edges whose *direction* was established. A measured correlation is
+  stored, visible, and unwalkable. `overnight.py` precomputes counterfactuals so
+  a macro question is answered in milliseconds, and every result records the
+  book it assumed so a stale answer is refused rather than delivered.
+  `jarvis_node.py` gains the console: a spatial dashboard, keyword entity
+  resolution (called that, because it is not language understanding), a streamed
+  causal breakdown, and exactly one recommendation behind an approval gate that
+  only a named human opens. It refuses four ways — unknown entity, unoriented
+  edge, no overnight run, stale book — and a veto produces no recommendation
+  rather than a softened one.
 
 ## Standing instructions
 

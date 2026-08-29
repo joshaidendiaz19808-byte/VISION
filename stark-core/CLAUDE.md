@@ -11,7 +11,7 @@ Read this file before touching anything in `stark-core/`.
 ## 1. The four levels
 
 ```
-Level 4  interface/     voice + spatial causal streaming   (how a human hears it)
+Level 4  interface/     knowledge graph, overnight runs, the console
 Level 3  tensors/       thermodynamic equilibrium fields   (what the market IS)
 Level 2  simulation/    causal engine + structure learning + active inference
 Level 1  core/          generate → attack → arbitrate       (what we DO)
@@ -93,7 +93,19 @@ anecdote.
 - Type hints on every public function. Docstrings say *what it honestly does*,
   not what it evokes.
 
-## 7. Two rules Phase 3 added
+## 7. Two rules Phase 5 added
+
+- **A causal query may only walk an edge whose direction was established.** A
+  measured correlation is stored and visible and is not a mechanism. Walking one
+  as though it were is how a system confidently recommends the opposite of the
+  right action.
+- **The interface may not improvise.** No overnight run, no answer. Stale book,
+  no answer. Unoriented edge, no answer. "I have not modelled that" is a
+  complete response; a neighbouring scenario presented as the requested one is
+  not. And nothing becomes even an intent without a named human's approval on
+  the record.
+
+## 8. Two rules Phase 3 added
 
 - **Hard limits are enforced by PROJECTION, never by a penalty term.** A penalty
   lets an optimiser buy its way past a constraint if the objective wants it
@@ -103,7 +115,7 @@ anecdote.
   borrowed from quantum many-body physics — no superposition, no quantum
   hardware, no quantum speedup. Say so in the docstring, every time.
 
-## 8. The MK18 loop
+## 9. The MK18 loop
 
 ```
 tensors      → field state (energy, entropy, temperature, disequilibrium)
@@ -120,9 +132,10 @@ jarvis_node  → narrates the whole thing in plain English
 Each stage may only ever *reduce* conviction. Nothing downstream of the red team
 is allowed to talk conviction back up.
 
-## 9. Verification
+## 10. Verification
 
-`pytest stark-core/tests/ -q` — 1,706 cases. The smoke file also runs standalone:
+`pytest stark-core/tests/ -q`; `pytest -q` from the repo root runs everything
+(1,833 cases including `ingestion/` and `execution/`). The smoke file also runs standalone:
 `python3 stark-core/tests/test_smoke.py`.
 
 `tests/test_risk_arbiter.py` is the Phase 1 guardrail suite: closed-form checks
@@ -153,7 +166,7 @@ nothing from STARK, nobody touches the global RNG, simulated numbers are
 labelled, and `F` never flips the sign of `U`. If you relax a rule here, a test
 turns red. That is the intended failure mode.
 
-## 10. Status: MK18
+## 11. Status: MK18
 
 All three phases are built, tested, and wired end to end. What does NOT exist:
 a real learned scorer behind `Generator.scorer` (still a rank-IC heuristic), a
