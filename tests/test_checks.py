@@ -122,6 +122,15 @@ def test_ml_predictions_vs_baseline():
     assert status(ml_model.run(pred=good, y_true="y_true", y_pred="y_pred"), "Better than a dumb") == PASS
 
 
+def test_best_of_runs_separates_luck_from_a_real_winner():
+    rng = np.random.default_rng(10)
+    noise_runs = pd.Series(0.70 + rng.normal(0, 0.014, 200))  # 200 equal models, n_test=1000
+    assert ml_model.best_of_runs(noise_runs, 1000).status == FAIL
+    real = noise_runs.copy()
+    real.iloc[0] = 0.80  # one genuinely better model
+    assert ml_model.best_of_runs(real, 1000).status == WARN
+
+
 # ── data integrity ───────────────────────────────────────────────────────────
 
 def test_benford_natural_vs_invented():

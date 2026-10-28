@@ -72,6 +72,22 @@ def fetch(fn, *args):
         st.error(str(e))
 
 
+def mlflow_runs_block():
+    """Optional: pull every run from MLflow / Databricks, so 'versions tried' is counted, not guessed."""
+    with st.expander("Count the versions you tried from MLflow / Databricks (optional)"):
+        c1, c2 = st.columns(2)
+        host = c1.text_input("Tracking server URL", placeholder="https://dbc-....cloud.databricks.com")
+        exp = c2.text_input("Experiment ID(s), comma-separated")
+        tok = st.text_input("Token (if the server needs one)", type="password", key="mlflow_tok")
+        if host and exp and st.button("Pull runs"):
+            st.session_state.mlflow = fetch(connectors.mlflow_runs, host, [e.strip() for e in exp.split(",")],
+                                            tok or None)
+        runs = st.session_state.get("mlflow")
+        if runs is not None:
+            st.caption(f"{len(runs)} runs found.")
+        return runs
+
+
 def show_report(rep: dict):
     color = COLORS[rep["verdict"]]
     sub = f"{rep['n']} {rep['unit']} analyzed · " if rep.get("n") else ""
@@ -169,6 +185,15 @@ if kind == "ml":
         with c2:
             yp = pick("Predicted column", pred.columns, detect.find(pred, detect.YPRED), "ml_yp")
         args.update(pred=pred, y_true=yt, y_pred=yp)
+    runs = mlflow_runs_block()
+    metric_cols = [c for c in runs.columns if c.startswith("metric.")] if runs is not None else []
+    if metric_cols:
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            mcol = pick("Metric that picked the winner", metric_cols, None, "ml_m")
+        n_test = c2.number_input("Test-set size", 1, 10_000_000, len(test) if test is not None else 1000)
+        higher = c3.toggle("Higher is better", value=True)
+        args.update(run_scores=runs[mcol], n_test=int(n_test), higher_is_better=higher)
     if args:
         reports.append(ml_model.run(**args))
 
@@ -190,11 +215,22 @@ elif kind != "code":
                 df = pd.read_csv("trades_sample.csv")
                 raw = df.astype(str)
     else:
-        providers = ["Alpaca (broker)", "Any API / URL"] if kind in ("auto", "trading") else ["Any API / URL"]
+        brokers = ["Interactive Brokers (Flex Query)", "Alpaca (broker)"]
+        providers = brokers + ["Any API / URL"] if kind in ("auto", "trading") else ["Any API / URL"]
         prov = st.selectbox("Connect to", providers)
         st.caption("🔒 Keys stay in memory for this session only - never saved, logged, or sent anywhere "
                    "except the provider you pick.")
-        if prov.startswith("Alpaca"):
+        if prov.startswith("Interactive"):
+            st.caption("One-time setup in IBKR Client Portal: Reports → Flex Queries → new Activity query with "
+                       "the Trades section (include FIFO P/L Realized + Cost Basis), then Flex Web Service → "
+                       "get a token.")
+            c1, c2 = st.columns(2)
+            tok = c1.text_input("Flex token", type="password")
+            qid = c2.text_input("Query ID")
+            if tok and qid and st.button("Connect"):
+                with st.spinner("IBKR is building your statement (can take ~30s)…"):
+                    st.session_state.fetched = fetch(connectors.ibkr_flex_trades, tok, qid)
+        elif prov.startswith("Alpaca"):
             c1, c2 = st.columns(2)
             kid = c1.text_input("API key ID")
             sec = c2.text_input("Secret key", type="password")
@@ -231,12 +267,14 @@ elif kind != "code":
             with c1:
                 rcol = pick("% return column", nums, cols.get("returns") or detect.find(df, detect.RETURN), "t_r")
             cost = c2.number_input("Cost per trade (bps)", 0.0, 100.0, 5.0)
-            tries = c3.number_input("Versions you tried", 1, 100000, 1,
+            runs = st.session_state.get("mlflow")
+            tries = c3.number_input("Versions you tried", 1, 100000, len(runs) if runs is not None else 1,
                                     help="How many settings/variants did you test before picking this one?")
             if is_dollar_scale(df[rcol]):
                 st.error(f"'{rcol}' looks like dollar amounts, not % returns (0.5 = a 0.5% gain). "
                          "Pick your % column, or convert first.")
                 st.stop()
+            mlflow_runs_block()
             dcol = cols.get("date") or detect.find(df, detect.DATE)
             ordered = df.sort_values(dcol) if dcol else df
             reports.append(trading.run(ordered[rcol], cost_bps=cost, n_trials=int(tries)))

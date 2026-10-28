@@ -139,9 +139,38 @@ def predictions(pred: pd.DataFrame, y_true: str, y_pred: str, n_boot: int = 2000
     return checks
 
 
+def best_of_runs(scores: pd.Series, n_test: int, higher_is_better: bool = True) -> Check:
+    """Many runs scored on the same test set: how much of the best score is just the luckiest draw?
+    scores: one 0-1 metric (accuracy, AUC, F1...) per run, e.g. pulled from MLflow."""
+    name = "Best of many runs"
+    s = pd.to_numeric(scores, errors="coerce").dropna()
+    if len(s) < 2 or not s.between(0, 1).all() or n_test < 1:
+        return Check(name, SKIP, "Needs 2+ runs with a 0-1 metric and the test-set size.")
+    best = s.max() if higher_is_better else s.min()
+    typical = s.median()
+    se = float(np.sqrt(max(typical * (1 - typical), 1e-6) / n_test))  # chance wobble of one score
+    optimism = se * np.sqrt(2 * np.log(len(s)))  # expected max of N noisy scores above their mean
+    gap = abs(best - typical)
+    detail = {"runs": len(s), "best": float(best), "median": float(typical), "se": se,
+              "expected_luck": float(optimism)}
+    if gap <= optimism:
+        return Check(name, FAIL,
+                     f"You tried {len(s)} versions. The best scored {best:.3f} vs a typical {typical:.3f}, but with "
+                     f"{n_test} test examples, picking the best of {len(s)} adds about {optimism:.3f} by luck alone. "
+                     "The 'winner' isn't really better than the rest.",
+                     "Pick the version on a validation set, then score it once on a fresh test set.", detail)
+    return Check(name, WARN,
+                 f"The best of {len(s)} runs ({best:.3f}) is genuinely ahead of the pack, but about {optimism:.3f} of "
+                 "it is expected luck from picking the max - expect a lower score on new data.",
+                 f"Quote roughly {best - optimism if higher_is_better else best + optimism:.3f}, or re-test on "
+                 "untouched data.", detail)
+
+
 def run(train=None, test=None, target=None, pred=None, y_true=None, y_pred=None,
-        time_col=None, id_col=None) -> dict:
+        time_col=None, id_col=None, run_scores=None, n_test=None, higher_is_better=True) -> dict:
     checks = []
+    if run_scores is not None and n_test:
+        checks.append(best_of_runs(run_scores, n_test, higher_is_better))
     if train is not None and test is not None and target:
         checks += leakage(train, test, target, time_col, id_col)
     if pred is not None and y_true and y_pred:
