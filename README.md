@@ -1,23 +1,25 @@
-# VISION — Strategy Validation Engine
-The bullshit-detector for trading strategies.
+# VISION — Is your result real?
+The bullshit-detector for results — trading, experiments, ML/AI models, research data, and the code behind them.
 
-Input: a strategy's trade results (or rules + price data)
-Output: REAL or FAKE + WHY + how to fix it
+Input: a results file, an API connection (Alpaca, any CSV/JSON URL with your key), and/or the code (files, notebooks, zip, GitHub repo)
+Output: LOOKS REAL / QUESTIONABLE / LOOKS FAKE + WHY + how to fix it
 
-## The universal honesty tests (instrument-agnostic):
-1. Out-of-sample decay  — does edge survive on unseen data?
-2. Cost stress          — does it survive 2/5/10 bps?
-3. Remove-best-trades   — is edge broad or just a few lucky wins?
-4. Monte Carlo          — is the equity curve luck or skill?
+Run: `streamlit run app.py` (one page). Tests: `pytest tests/test_checks.py` — every check is tested on planted fakes and planted clean cases.
 
-## Known limitations:
-- **Look-ahead bias cannot be detected from a trade log alone.**
-  A trade log only records what happened, not how the strategy made its decisions.
-  Catching look-ahead requires auditing the strategy's source code or backtesting engine directly.
+## What it checks (`checks/`)
+| Module | Checks |
+|---|---|
+| `trading.py` | sample size, out-of-sample decay, remove-best-trades, cost stress, Monte Carlo luck, deflated Sharpe (how many versions you tried), smoothed returns |
+| `ab_test.py` | sample-ratio mismatch, significance with multiple-metric correction, enough data, implausible lift, whale-driven results, peeking, novelty decay |
+| `ml_model.py` | train/test duplicate rows, entity overlap, train-on-future, single-column target leakage, score vs dumb baseline with bootstrap CI, suspiciously perfect scores |
+| `integrity.py` | Benford first digits, last-digit preference, duplicate padding, p-hacking bump under 0.05, GRIM (impossible means) |
+| `code_audit.py` | negative shift, next-bar peeking, centered windows, bfill, whole-history normalization, preprocessing fit before split, shuffled time splits, best-version-on-test-set, seed fishing, scoring on train, survivorship lists, no costs, unseeded randomness, notebooks run out of order — static `ast` only, never executes code |
+| `connectors.py` | GitHub repo (token for private), any URL (CSV/JSON + auth header), Alpaca portfolio history — keys live in memory only |
 
-## Why instrument-agnostic:
-Overfitting looks the SAME in SPY, EUR/USD, gold, crypto.
-The user brings their data + strategy. We bring the truth.
+## Known limitations
+- Code audit is pattern-based: it catches the common ways results get faked, not every bug. Python + notebooks only.
+- Forensic data checks (Benford, digits) are red flags for a human to look at, not proof.
+- Alpaca connector is tested for error handling only — not yet against a real account.
 
 ## Build log:
 Day 1: __

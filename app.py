@@ -1,217 +1,302 @@
+import io
 import re
 import sys
+import tempfile
+import zipfile
+from pathlib import Path
+
 import pandas as pd
 import streamlit as st
 
 sys.path.insert(0, "src")
-from vision import verdict
+from checks import ab_test, code_audit, connectors, detect, integrity, ml_model, trading, merge, FAIL, WARN, PASS
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 
-def _norm(name: str) -> str:
-    return re.sub(r"[^a-z0-9]", "", name.lower())
+KINDS = {
+    "Auto-detect": "auto",
+    "Trading strategy": "trading",
+    "A/B test / experiment": "ab",
+    "ML / AI model": "ml",
+    "Any data / research numbers": "data",
+    "Code & pipeline only": "code",
+}
+LOOKS_LIKE = {"trading": "trading results", "ab": "an A/B test", "predictions": "model predictions",
+              "data": "general data"}
+COLORS = {"LOOKS REAL": "#1D9E75", "QUESTIONABLE": "#E5A50A", "LOOKS FAKE": "#E5484D",
+          "NOT ENOUGH TO JUDGE": "#6B7280"}
+ICON = {FAIL: ("✗", "#E5484D"), WARN: ("!", "#E5A50A")}
+NONE = "(none)"
 
-RETURN_CANDIDATES = [
-    "returnpct", "return", "returns", "ret",
-    "pnl", "pnlpct", "pl",
-    "profit", "profitpct", "gain", "roi",
-]
-
-DATE_CANDIDATES = ["date", "time", "datetime", "exitdate", "closetime"]
-
-def detect_col(df: pd.DataFrame, candidates: list[str]) -> str | None:
-    norm_map = {_norm(c): c for c in df.columns}
-    for key in candidates:
-        if key in norm_map:
-            return norm_map[key]
-    return None
 
 def numeric_columns(df: pd.DataFrame) -> list[str]:
-    return [
-        c for c in df.columns
-        if pd.to_numeric(df[c], errors="coerce").notna().sum() > len(df) * 0.5
-    ]
+    return [c for c in df.columns if pd.to_numeric(df[c], errors="coerce").notna().sum() > len(df) * 0.5]
+
 
 def is_dollar_scale(series: pd.Series) -> bool:
     vals = pd.to_numeric(series, errors="coerce").dropna()
     return len(vals) > 0 and vals.abs().median() > 10
 
-def show_verdict(df: pd.DataFrame, out: dict):
-    is_real = "REAL" in out["verdict"]
-    accent = "#1D9E75" if is_real else "#E5484D"
-    headline = "REAL" if is_real else "FAKE"
-    sub = "Worth paper trading" if is_real else "Don't trade this yet"
 
+def read_table(f) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Parsed table + the same table as raw strings (integrity checks need the digits as typed)."""
+    data = f.getvalue()
+    reader = pd.read_excel if f.name.endswith((".xlsx", ".xls")) else pd.read_csv
+    df, raw = reader(io.BytesIO(data)), reader(io.BytesIO(data), dtype=str)
+    df.columns = raw.columns = [str(c).strip() for c in df.columns]
+    return df, raw
+
+
+def code_dir_from_uploads(files) -> Path:
+    """Put uploaded .py / .ipynb / .zip files in a temp folder for the static audit (never executed)."""
+    d = Path(tempfile.mkdtemp(prefix="vision_code_"))
+    for f in files:
+        if f.name.endswith(".zip"):
+            with zipfile.ZipFile(io.BytesIO(f.getvalue())) as z:
+                z.extractall(d)  # zipfile strips absolute paths and '..'
+        else:
+            (d / Path(f.name).name).write_bytes(f.getvalue())
+    return d
+
+
+def pick(label, options, guess, key, optional=False):
+    options = ([NONE] if optional else []) + list(options)
+    choice = st.selectbox(label, options, index=options.index(guess) if guess in options else 0, key=key)
+    return None if choice == NONE else choice
+
+
+def fetch(fn, *args):
+    try:
+        return fn(*args)
+    except Exception as e:  # connector errors are already written for humans and never contain the key
+        st.error(str(e))
+
+
+def show_report(rep: dict):
+    color = COLORS[rep["verdict"]]
+    sub = f"{rep['n']} {rep['unit']} analyzed · " if rep.get("n") else ""
     st.markdown(
         f"""
-        <div style="background:#1A1D24;border:1px solid {accent}33;
-                    border-left:4px solid {accent};border-radius:10px;
-                    padding:28px 32px;margin:8px 0 24px 0;">
-          <div style="display:flex;align-items:baseline;justify-content:space-between;
-                      flex-wrap:wrap;gap:12px;">
-            <span style="font-size:2.25rem;font-weight:800;color:{accent};
-                        letter-spacing:0.02em;">{headline}</span>
-            <span style="background:{accent}22;color:{accent};font-weight:700;
-                        font-size:0.85rem;padding:6px 14px;border-radius:999px;
-                        border:1px solid {accent}55;">{out['score']}</span>
+        <div style="background:#1A1D24;border:1px solid {color}33;border-left:4px solid {color};
+                    border-radius:10px;padding:28px 32px;margin:8px 0 24px 0;">
+          <div style="display:flex;align-items:baseline;justify-content:space-between;flex-wrap:wrap;gap:12px;">
+            <span style="font-size:2.1rem;font-weight:800;color:{color};letter-spacing:0.02em;">{rep['verdict']}</span>
+            <span style="background:{color}22;color:{color};font-weight:700;font-size:0.85rem;padding:6px 14px;
+                         border-radius:999px;border:1px solid {color}55;">{rep['score']}</span>
           </div>
-          <div style="color:#9CA3AF;font-size:1.05rem;margin-top:4px;">{sub}</div>
-          <div style="color:#6B7280;font-size:0.85rem;margin-top:14px;">
-            {len(df)} trades analyzed
-          </div>
+          <div style="color:#6B7280;font-size:0.85rem;margin-top:10px;">{sub}{rep['kind']}</div>
         </div>
         """,
         unsafe_allow_html=True,
     )
-
-    if not out["reasons"]:
-        st.success("Passed every honesty test. Paper trade it before risking real money.")
-        return
-
-    st.markdown(
-        "<div style='font-weight:700;font-size:1.1rem;margin-bottom:8px;'>What's wrong</div>",
-        unsafe_allow_html=True,
-    )
-    for reason, fix in zip(out["reasons"], out["fixes"]):
+    problems = sorted((c for c in rep["checks"] if c.status in (FAIL, WARN)), key=lambda c: c.status != FAIL)
+    if problems:
+        st.markdown("<div style='font-weight:700;font-size:1.1rem;margin-bottom:8px;'>What's wrong</div>",
+                    unsafe_allow_html=True)
+    for c in problems:
+        mark, col = ICON[c.status]
         st.markdown(
             f"""
             <div style="background:#1A1D24;border-radius:8px;padding:16px 20px;margin-bottom:12px;">
-              <div style="font-size:1rem;color:#FAFAFA;">
-                <span style="color:#E5484D;font-weight:700;margin-right:8px;">✗</span>{reason}
-              </div>
-              <div style="font-size:0.9rem;color:#9CA3AF;margin-top:8px;padding-left:24px;">
-                {fix}
-              </div>
+              <div style="font-weight:700;color:#FAFAFA;">
+                <span style="color:{col};margin-right:8px;">{mark}</span>{c.name}</div>
+              <div style="font-size:0.95rem;color:#D1D5DB;margin-top:6px;padding-left:24px;">{c.reason}</div>
+              <div style="font-size:0.9rem;color:#9CA3AF;margin-top:6px;padding-left:24px;">Fix: {c.fix}</div>
             </div>
             """,
             unsafe_allow_html=True,
         )
+        locs = c.detail.get("locations")
+        if locs and len(locs) > 1:
+            with st.expander(f"All {len(locs)} places"):
+                st.code("\n".join(f"{l['file']}:{l['line']}  {l['code']}" for l in locs), language="text")
+    passed = [c for c in rep["checks"] if c.status == PASS]
+    skipped = [c for c in rep["checks"] if c.status == "skip"]
+    if not problems and passed:
+        st.success("Passed every check VISION could run. Still confirm it on fresh data before betting on it.")
+    with st.expander(f"Passed ({len(passed)}) · Couldn't run ({len(skipped)})"):
+        for c in passed:
+            st.markdown(f"✓ {c.name}")
+        for c in skipped:
+            st.markdown(f"– **{c.name}** — {c.reason}")
+
 
 # ── page ──────────────────────────────────────────────────────────────────────
 
 st.set_page_config(page_title="VISION", page_icon="🔍")
 st.markdown(
     """
-    <div style="font-size:2.4rem;font-weight:800;letter-spacing:0.03em;
-                color:#FAFAFA;margin-bottom:0.1rem;">VISION</div>
-    <div style="font-size:1rem;color:#9CA3AF;margin-bottom:1.75rem;">
-        Strategy honesty check. Upload your trades, get the truth.
+    <div style="font-size:2.4rem;font-weight:800;letter-spacing:0.03em;color:#FAFAFA;margin-bottom:0.1rem;">VISION</div>
+    <div style="font-size:1rem;color:#9CA3AF;margin-bottom:1.5rem;">
+        Are your results real? Plug in what you're testing - trades, an experiment, a model,
+        any data, or the code behind it - and get the truth.
     </div>
     """,
     unsafe_allow_html=True,
 )
 
-if "use_sample" not in st.session_state:
-    st.session_state.use_sample = False
+kind = KINDS[st.radio("What are you checking?", list(KINDS), horizontal=True)]
+reports = []
 
-st.markdown(
-    "Upload a CSV of your **closed trades** — one row per finished trade, with a "
-    "% return column (e.g. 0.5 = a 0.5% gain). Most brokers and TradingView can export this. "
-    "**Tip:** use your trade/performance history, NOT your raw order log. "
-    "Need 100+ trades for a meaningful verdict."
-)
-st.code("date,return_pct\n2024-01-03,0.42\n2024-01-04,-0.18", language="text")
-uploaded = st.file_uploader("Upload a CSV — any format, we'll figure it out", type="csv")
+# ── results: upload or connect ────────────────────────────────────────────────
 
-if uploaded:
-    st.session_state.use_sample = False
-elif st.button("▶ Try a sample"):
-    st.session_state.use_sample = True
+if kind == "ml":
+    st.caption("Upload your **train** and **test** tables to check for leakage, and/or a **predictions** "
+               "table (actual vs predicted) to check the score.")
+    c1, c2, c3 = st.columns(3)
+    tr = c1.file_uploader("Train table", type=["csv", "xlsx"])
+    te = c2.file_uploader("Test table", type=["csv", "xlsx"])
+    pr = c3.file_uploader("Predictions", type=["csv", "xlsx"])
+    train = read_table(tr)[0] if tr else None
+    test = read_table(te)[0] if te else None
+    pred = read_table(pr)[0] if pr else None
+    args = {}
+    if train is not None and test is not None:
+        cols = list(train.columns)
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            target = pick("Target column", cols, detect.find(train, detect.YTRUE), "ml_t")
+        with c2:
+            tcol = pick("Time column", cols, detect.find(train, detect.DATE), "ml_d", optional=True)
+        with c3:
+            icol = pick("Entity / user ID column", cols,
+                        next((c for c in cols if re.search(r"id$", c, re.I)), None), "ml_i", optional=True)
+        args.update(train=train, test=test, target=target, time_col=tcol, id_col=icol)
+    if pred is not None:
+        c1, c2 = st.columns(2)
+        with c1:
+            yt = pick("Actual column", pred.columns, detect.find(pred, detect.YTRUE), "ml_yt")
+        with c2:
+            yp = pick("Predicted column", pred.columns, detect.find(pred, detect.YPRED), "ml_yp")
+        args.update(pred=pred, y_true=yt, y_pred=yp)
+    if args:
+        reports.append(ml_model.run(**args))
 
-# ── load ──────────────────────────────────────────────────────────────────────
+elif kind != "code":
+    source = st.radio("Where are the results?", ["Upload a file", "Connect an account (API)"], horizontal=True)
+    df = raw = None
+    if source == "Upload a file":
+        f = st.file_uploader("CSV or Excel - any layout, VISION figures it out", type=["csv", "xlsx", "xls"])
+        if f:
+            try:
+                df, raw = read_table(f)
+            except Exception as e:
+                st.error(f"Couldn't read that file: {e}")
+                st.stop()
+        elif kind in ("auto", "trading"):
+            if st.button("▶ Try a sample"):
+                st.session_state.sample = True
+            if st.session_state.get("sample"):
+                df = pd.read_csv("trades_sample.csv")
+                raw = df.astype(str)
+    else:
+        providers = ["Alpaca (broker)", "Any API / URL"] if kind in ("auto", "trading") else ["Any API / URL"]
+        prov = st.selectbox("Connect to", providers)
+        st.caption("🔒 Keys stay in memory for this session only - never saved, logged, or sent anywhere "
+                   "except the provider you pick.")
+        if prov.startswith("Alpaca"):
+            c1, c2 = st.columns(2)
+            kid = c1.text_input("API key ID")
+            sec = c2.text_input("Secret key", type="password")
+            paper = st.toggle("Paper account", value=True)
+            if kid and sec and st.button("Connect"):
+                st.session_state.fetched = fetch(connectors.alpaca_returns, kid, sec, paper)
+        else:
+            url = st.text_input("URL that returns CSV or JSON")
+            c1, c2 = st.columns(2)
+            hdr = c1.text_input("Auth header name (optional)", placeholder="Authorization")
+            key = c2.text_input("Key / token", type="password", placeholder="Bearer ...")
+            jp = st.text_input("JSON path to the rows (optional)", placeholder="data.results")
+            if url and st.button("Fetch"):
+                st.session_state.fetched = fetch(connectors.url_table, url, hdr or None, key or None, jp or None)
+        df = st.session_state.get("fetched")
+        raw = df.astype(str) if df is not None else None
 
-raw = None
-source_label = None
+    if df is not None:
+        if df.empty:
+            st.error("That table is empty.")
+            st.stop()
+        guessed, cols = detect.guess(df)
+        if kind == "auto":
+            kind = guessed
+            st.caption(f"Looks like **{LOOKS_LIKE[kind]}** - pick a type above if that's wrong.")
+        allc = list(df.columns)
 
-if uploaded:
-    try:
-        raw = pd.read_csv(uploaded)
-        source_label = uploaded.name
-    except Exception as e:
-        st.error(f"Couldn't parse that file: {e}. Make sure it's a plain CSV.")
-        st.stop()
-elif st.session_state.use_sample:
-    try:
-        raw = pd.read_csv("trades_sample.csv")
-        source_label = "trades_sample.csv"
-        st.info("Showing results for the built-in sample file.")
-    except FileNotFoundError:
-        st.error("Sample file not found. Run the app from the VISION root directory.")
-        st.stop()
-else:
-    st.stop()
+        if kind == "trading":
+            nums = numeric_columns(df)
+            if not nums:
+                st.error("No numeric columns found - VISION needs a % return per trade.")
+                st.stop()
+            c1, c2, c3 = st.columns(3)
+            with c1:
+                rcol = pick("% return column", nums, cols.get("returns") or detect.find(df, detect.RETURN), "t_r")
+            cost = c2.number_input("Cost per trade (bps)", 0.0, 100.0, 5.0)
+            tries = c3.number_input("Versions you tried", 1, 100000, 1,
+                                    help="How many settings/variants did you test before picking this one?")
+            if is_dollar_scale(df[rcol]):
+                st.error(f"'{rcol}' looks like dollar amounts, not % returns (0.5 = a 0.5% gain). "
+                         "Pick your % column, or convert first.")
+                st.stop()
+            dcol = cols.get("date") or detect.find(df, detect.DATE)
+            ordered = df.sort_values(dcol) if dcol else df
+            reports.append(trading.run(ordered[rcol], cost_bps=cost, n_trials=int(tries)))
 
-raw.columns = [c.strip() for c in raw.columns]
+        elif kind == "ab":
+            c1, c2, c3 = st.columns(3)
+            with c1:
+                g = pick("Group column", allc, cols.get("group") or detect.find(df, detect.GROUP), "ab_g")
+            with c2:
+                o = pick("Outcome column", allc, cols.get("outcome") or detect.find(df, detect.OUTCOME), "ab_o")
+            with c3:
+                t = pick("Time column", allc, cols.get("time") or detect.find(df, detect.DATE), "ab_t", optional=True)
+            c1, c2, c3 = st.columns(3)
+            groups = sorted(df[g].astype(str).unique())
+            ctrl = c1.selectbox("Control group", groups,
+                                index=next((i for i, x in enumerate(groups)
+                                            if x.lower() in ("control", "a", "0", "baseline")), 0))
+            split = c2.number_input("Planned % in control", 1, 99, 50) / 100
+            metrics = c3.number_input("Metrics you looked at", 1, 1000, 1,
+                                      help="Checked 20 metrics and reporting the one that moved? Say 20.")
+            reports.append(ab_test.run(df, g, o, ctrl, t, split, int(metrics)))
 
-if raw.empty:
-    st.error("That CSV is empty. Add some trades and try again.")
-    st.stop()
+        elif kind == "predictions":
+            c1, c2 = st.columns(2)
+            with c1:
+                yt = pick("Actual column", allc, cols.get("y_true"), "p_yt")
+            with c2:
+                yp = pick("Predicted column", allc, cols.get("y_pred"), "p_yp")
+            reports.append(ml_model.run(pred=df, y_true=yt, y_pred=yp))
 
-# ── column detection ──────────────────────────────────────────────────────────
+        else:
+            reports.append(integrity.run(df, raw))
 
-num_cols = numeric_columns(raw)
-if not num_cols:
-    st.error(
-        "No numeric columns found. "
-        "VISION needs a column of % returns per trade (e.g. 0.5 for a 0.5% gain). "
-        "Check that your CSV has numbers in at least one column."
-    )
-    st.stop()
-
-auto_col = detect_col(raw, RETURN_CANDIDATES) or num_cols[0]
-date_col = detect_col(raw, DATE_CANDIDATES)
-
-# Reset the user override whenever the source file changes.
-if st.session_state.get("_last_source") != source_label:
-    st.session_state.pop("col_override", None)
-    st.session_state["_last_source"] = source_label
-
-# Effective column: user override (if still valid) else auto-detected.
-effective_col = st.session_state.get("col_override", auto_col)
-if effective_col not in num_cols:
-    effective_col = auto_col
-
-# ── dollar-amount guard (only hard stop) ─────────────────────────────────────
-
-if is_dollar_scale(raw[effective_col]):
-    st.error(
-        f"The **'{effective_col}'** column looks like dollar amounts, not % returns. "
-        "VISION needs % returns — 0.5 means a 0.5% gain, not $0.50. "
-        "Pick your % column below, or convert your data first."
-    )
-    st.selectbox("Pick your % return column:", num_cols, key="col_override")
-    st.stop()
-
-# ── run verdict ───────────────────────────────────────────────────────────────
-
-returns = pd.to_numeric(raw[effective_col], errors="coerce")
-dates = raw[date_col] if date_col else pd.Series(range(len(raw)))
-df = pd.DataFrame({"date": dates, "return_pct": returns}).dropna(subset=["return_pct"])
-
-if len(df) == 0:
-    st.error(
-        f"No usable numbers found in '{effective_col}'. "
-        "Make sure that column contains numeric values and isn't all blank."
-    )
-    st.stop()
-
-try:
-    out = verdict(df)
-except Exception as e:
-    st.error(f"Analysis failed: {e}")
-    st.stop()
-
-# ── result ────────────────────────────────────────────────────────────────────
+# ── the code behind it ────────────────────────────────────────────────────────
 
 st.markdown("---")
-show_verdict(df, out)
+title = "The code / pipeline to audit" if kind == "code" else "Also audit the code that produced this (recommended)"
+with st.expander(title, expanded=kind == "code"):
+    st.caption("VISION reads the code - it never runs it. Catches look-ahead, leakage, test-set tuning, "
+               "seed fishing, missing costs and more, in Python files and notebooks.")
+    c1, c2 = st.columns(2)
+    files = c1.file_uploader(".py / .ipynb / .zip", type=["py", "ipynb", "zip"], accept_multiple_files=True)
+    repo = c2.text_input("…or a GitHub repo", placeholder="owner/repo or https://github.com/owner/repo")
+    tok = c2.text_input("GitHub token (private repos only)", type="password")
+    code_root = None
+    if files:
+        code_root = code_dir_from_uploads(files)
+    elif repo:
+        repos = st.session_state.setdefault("repos", {})
+        if repo not in repos and st.button("Audit repo"):
+            with st.spinner("Downloading and reading the code…"):
+                got = fetch(connectors.github_repo, repo, tok or None)
+                if got:
+                    repos[repo] = str(got)
+        code_root = repos.get(repo)
+    if code_root:
+        reports.append(code_audit.run(code_root))
 
-st.markdown("---")
-st.caption(f"Reading returns from: **'{effective_col}'**")
-with st.expander("Wrong column? Change it"):
-    st.selectbox(
-        "Pick a different column:",
-        num_cols,
-        index=num_cols.index(effective_col),
-        key="col_override",
-    )
+# ── verdict ───────────────────────────────────────────────────────────────────
+
+if reports:
+    st.markdown("---")
+    show_report(reports[0] if len(reports) == 1 else merge("Results + the code behind them", reports))
