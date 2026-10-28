@@ -1,0 +1,8 @@
+{
+  "appId": "io.visioncheck.app",
+  "appName": "VISION",
+  "webDir": "www",
+  "backgroundColor": "#0E1117",
+  "ios": { "contentInset": "never" },
+  "android": { "allowMixedContent": false }
+}

@@ -6,4 +6,5 @@ stark-core
 ingestion
 execution
 tests
+mobile
 *.jsonl

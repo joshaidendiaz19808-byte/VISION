@@ -176,3 +176,31 @@ def test_installable(browser_page, base_url):
         page.wait_for_function("navigator.serviceWorker.controller !== null || navigator.serviceWorker.ready", timeout=10000)
         assert page.evaluate("navigator.serviceWorker.ready.then(r => !!r.active)")
     assert not errors, errors
+
+
+def test_phone_app_mode_cross_origin(base_url, tmp_path):
+    """Like the phone apps: the screen is served from one origin, the API lives on another."""
+    import functools
+    import http.server
+    import shutil
+
+    www = tmp_path / "www"
+    shutil.copytree(Path(__file__).resolve().parent.parent / "web", www)
+    (www / "config.js").write_text(f'window.VISION_API = "{base_url}";\n')
+    handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=str(www))
+    static = http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler)
+    threading.Thread(target=static.serve_forever, daemon=True).start()
+    try:
+        with pw.sync_playwright() as p:
+            browser = p.webkit.launch()
+            page = browser.new_context(**p.devices["iPhone 13"]).new_page()
+            errors = []
+            page.on("pageerror", lambda e: errors.append(str(e)))
+            page.goto(f"http://localhost:{static.server_address[1]}")
+            page.click("#sample")
+            page.wait_for_selector(".verdict .big", timeout=30000)
+            assert "trades analyzed" in page.inner_text(".verdict .sub")
+            assert not errors, errors
+            browser.close()
+    finally:
+        static.shutdown()

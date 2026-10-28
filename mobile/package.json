@@ -1,0 +1,20 @@
+{
+  "name": "vision-mobile",
+  "private": true,
+  "version": "1.0.0",
+  "description": "VISION iPhone + Android apps (Capacitor wrapper around ../web)",
+  "scripts": {
+    "build": "node build-web.mjs",
+    "sync": "node build-web.mjs && cap sync",
+    "ios": "node build-web.mjs && cap sync ios && cap open ios",
+    "android": "node build-web.mjs && cap sync android && cap open android"
+  },
+  "dependencies": {
+    "@capacitor/android": "8.5.3",
+    "@capacitor/core": "8.5.3",
+    "@capacitor/ios": "8.5.3"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "8.5.3"
+  }
+}
