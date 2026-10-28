@@ -16,10 +16,18 @@ Run: `streamlit run app.py` (one page). Tests: `pytest tests/test_checks.py` —
 | `code_audit.py` | negative shift, next-bar peeking, centered windows, bfill, whole-history normalization, preprocessing fit before split, shuffled time splits, best-version-on-test-set, seed fishing, scoring on train, survivorship lists, no costs, unseeded randomness, notebooks run out of order — static `ast` only, never executes code |
 | `connectors.py` | GitHub repo (token for private), any URL (CSV/JSON + auth header), Alpaca portfolio history — keys live in memory only |
 
+| `ai_review.py` | Claude (Opus 5.5) reviews the code as untrusted data, using static hits as leads — optional, needs an Anthropic key |
+
+## Hosting
+- Login turns on when `.streamlit/secrets.toml` (or the host's secrets) has an `[auth]` section — see `.streamlit/secrets.toml.example` (Google login).
+- Hosted users bring their own Anthropic key for the AI review unless `allow_server_ai_key = true`.
+- Deploy: Streamlit Community Cloud (point at this repo, `app.py`, paste secrets) or any Docker host (`Dockerfile`, honours `$PORT`).
+
 ## Known limitations
 - Code audit is pattern-based: it catches the common ways results get faked, not every bug. Python + notebooks only.
 - Forensic data checks (Benford, digits) are red flags for a human to look at, not proof.
-- Alpaca connector is tested for error handling only — not yet against a real account.
+- Alpaca, IBKR and MLflow connectors and the AI review are tested against canned responses — not yet against real accounts.
+- Dockerfile not yet built (no Docker on the dev machine).
 
 ## Build log:
 Day 1: __

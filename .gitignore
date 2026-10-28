@@ -3,3 +3,4 @@ __pycache__/
 .env
 real_data/*.jsonl
 real_data/*.json
+.streamlit/secrets.toml

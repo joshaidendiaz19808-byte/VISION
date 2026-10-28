@@ -1,7 +1,10 @@
+import hashlib
 import io
 import re
+import shutil
 import sys
 import tempfile
+import time
 import zipfile
 from pathlib import Path
 
@@ -47,16 +50,46 @@ def read_table(f) -> tuple[pd.DataFrame, pd.DataFrame]:
     return df, raw
 
 
-def code_dir_from_uploads(files) -> Path:
-    """Put uploaded .py / .ipynb / .zip files in a temp folder for the static audit (never executed)."""
+MAX_UNZIPPED = 200 * 1024 * 1024
+
+
+def code_dir_from_uploads(files) -> Path | None:
+    """Put uploaded .py / .ipynb / .zip files in a temp folder for the static audit (never executed).
+    Cached by content, so reruns reuse the same folder (and the AI review stays attached to it)."""
+    digest = hashlib.sha256(b"".join(f.name.encode() + f.getvalue() for f in files)).hexdigest()
+    cache = st.session_state.setdefault("uploads", {})
+    if digest in cache and Path(cache[digest]).exists():
+        return Path(cache[digest])
     d = Path(tempfile.mkdtemp(prefix="vision_code_"))
     for f in files:
         if f.name.endswith(".zip"):
             with zipfile.ZipFile(io.BytesIO(f.getvalue())) as z:
+                if sum(i.file_size for i in z.infolist()) > MAX_UNZIPPED:
+                    st.error(f"{f.name} unpacks to more than 200 MB - upload just the code folder.")
+                    shutil.rmtree(d, ignore_errors=True)
+                    return None
                 z.extractall(d)  # zipfile strips absolute paths and '..'
         else:
             (d / Path(f.name).name).write_bytes(f.getvalue())
+    cache[digest] = str(d)
     return d
+
+
+def sweep_old_temp(max_age_s=3600):
+    """Hosted servers live a long time: drop downloaded/uploaded code older than an hour."""
+    for p in Path(tempfile.gettempdir()).glob("vision_*"):
+        try:
+            if time.time() - p.stat().st_mtime > max_age_s:
+                shutil.rmtree(p, ignore_errors=True)
+        except OSError:
+            pass
+
+
+def auth_configured() -> bool:
+    try:
+        return "auth" in st.secrets
+    except Exception:  # no secrets file at all = local use
+        return False
 
 
 def pick(label, options, guess, key, optional=False):
@@ -140,6 +173,19 @@ def show_report(rep: dict):
 # ── page ──────────────────────────────────────────────────────────────────────
 
 st.set_page_config(page_title="VISION", page_icon="🔍")
+
+# Hosted = a login provider is configured in secrets. Locally there's no login.
+HOSTED = auth_configured()
+if HOSTED:
+    if not st.user.get("is_logged_in", False):
+        st.markdown("<div style='font-size:2.4rem;font-weight:800;color:#FAFAFA;'>VISION</div>"
+                    "<div style='color:#9CA3AF;margin-bottom:1.5rem;'>Are your results real? Log in to check.</div>",
+                    unsafe_allow_html=True)
+        st.button("Log in", on_click=st.login, type="primary")
+        st.stop()
+    _, right = st.columns([5, 1])
+    right.button("Log out", on_click=st.logout)
+    sweep_old_temp()
 st.markdown(
     """
     <div style="font-size:2.4rem;font-weight:800;letter-spacing:0.03em;color:#FAFAFA;margin-bottom:0.1rem;">VISION</div>
@@ -336,9 +382,11 @@ with st.expander(title, expanded=kind == "code"):
         st.markdown("**Deeper AI review** - Claude reads the code like a skeptical reviewer and finds what "
                     "pattern rules can't (leaks through joins, wrong metrics, labels built from the future "
                     "elsewhere in the project). Your code is sent to the Anthropic API; it is never run.")
-        akey = st.text_input("Anthropic API key (blank = use ANTHROPIC_API_KEY)", type="password")
+        server_key_ok = not HOSTED or st.secrets.get("allow_server_ai_key", False)
+        akey = st.text_input("Anthropic API key" + (" (blank = use the server's)" if server_key_ok else ""),
+                             type="password")
         reviews = st.session_state.setdefault("ai_reviews", {})
-        if st.button("Run AI review"):
+        if st.button("Run AI review", disabled=not (akey or server_key_ok)):
             with st.spinner("Claude is reading the code - large projects take a few minutes…"):
                 reviews[str(code_root)] = ai_review.run(code_root, akey or None, static)
         ai = reviews.get(str(code_root))

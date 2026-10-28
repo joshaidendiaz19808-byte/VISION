@@ -1,0 +1,9 @@
+.git
+.streamlit/secrets.toml
+__pycache__
+real_data
+stark-core
+ingestion
+execution
+tests
+*.jsonl

@@ -1,6 +1,9 @@
+[server]
+maxUploadSize = 300
+enableXsrfProtection = true
+
+[browser]
+gatherUsageStats = false
+
 [theme]
-base="dark"
-primaryColor="#1D9E75"
-backgroundColor="#0E1117"
-secondaryBackgroundColor="#1A1D24"
-textColor="#FAFAFA"
+base = "dark"
