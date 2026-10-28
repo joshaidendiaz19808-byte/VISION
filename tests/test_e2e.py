@@ -79,8 +79,8 @@ def test_sample_flow(browser_page, base_url):
     # change a setting and re-check
     page.fill("#options input[type=number] >> nth=1", "500")
     page.click("#run")
-    page.wait_for_timeout(500)
-    assert "Tried many versions" in page.inner_text("#verdict")
+    page.wait_for_function("document.querySelector('#verdict').innerText.includes('Tried many versions')",
+                           timeout=30000)
     assert no_horizontal_scroll(page)
     SHOTS.mkdir(exist_ok=True)
     page.screenshot(path=str(SHOTS / f"{name}-sample.png"), full_page=True)
@@ -178,12 +178,13 @@ def test_installable(browser_page, base_url):
     assert not errors, errors
 
 
-def test_phone_app_mode_cross_origin(base_url, tmp_path):
+def test_phone_app_mode_cross_origin(browser_page, base_url, tmp_path):
     """Like the phone apps: the screen is served from one origin, the API lives on another."""
     import functools
     import http.server
     import shutil
 
+    name, page, errors = browser_page
     www = tmp_path / "www"
     shutil.copytree(Path(__file__).resolve().parent.parent / "web", www)
     (www / "config.js").write_text(f'window.VISION_API = "{base_url}";\n')
@@ -191,16 +192,10 @@ def test_phone_app_mode_cross_origin(base_url, tmp_path):
     static = http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler)
     threading.Thread(target=static.serve_forever, daemon=True).start()
     try:
-        with pw.sync_playwright() as p:
-            browser = p.webkit.launch()
-            page = browser.new_context(**p.devices["iPhone 13"]).new_page()
-            errors = []
-            page.on("pageerror", lambda e: errors.append(str(e)))
-            page.goto(f"http://localhost:{static.server_address[1]}")
-            page.click("#sample")
-            page.wait_for_selector(".verdict .big", timeout=30000)
-            assert "trades analyzed" in page.inner_text(".verdict .sub")
-            assert not errors, errors
-            browser.close()
+        page.goto(f"http://localhost:{static.server_address[1]}")
+        page.click("#sample")
+        page.wait_for_selector(".verdict .big", timeout=30000)
+        assert "trades analyzed" in page.inner_text(".verdict .sub")
+        assert not errors, errors
     finally:
         static.shutdown()
