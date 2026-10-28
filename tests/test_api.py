@@ -147,3 +147,59 @@ def test_cors_allows_phone_apps():
         assert r.headers.get("access-control-allow-origin") == origin
     r = client.options("/api/health", headers={"Origin": "https://evil.com", "Access-Control-Request-Method": "GET"})
     assert "access-control-allow-origin" not in r.headers
+
+
+@pytest.fixture
+def locked(monkeypatch):
+    monkeypatch.setattr(server.app.state, "access_codes", ["alpha-123", "beta-456"])
+    monkeypatch.setattr(server.app.state, "limits", {"check": (3, 3600), "ai": (1, 86400), "bad_code": (2, 3600)})
+
+
+def test_access_code_required_when_set(locked):
+    df = pd.DataFrame({"return_pct": [0.1, -0.2, 0.3] * 20})
+    assert client.get("/api/health").status_code == 200  # health stays open for the host's checks
+    r = post_table(df)
+    assert r.status_code == 401 and r.json()["detail"] == "Enter your access code."
+    r = client.post("/api/check", headers={"X-Vision-Code": "nope"}, files={"file": ("r.csv", csv(df))})
+    assert r.status_code == 401 and "isn't valid" in r.json()["detail"]
+    r = client.post("/api/check", headers={"X-Vision-Code": "beta-456"}, files={"file": ("r.csv", csv(df))})
+    assert r.status_code == 200 and r.json()["kind"] == "trading"
+    assert client.get("/").status_code == 200  # the web page itself loads without a code
+
+
+def test_wrong_codes_get_locked_out(locked):
+    for _ in range(2):
+        assert client.post("/api/combine", headers={"X-Vision-Code": "guess"}, json={}).status_code == 401
+    r = client.post("/api/combine", headers={"X-Vision-Code": "alpha-123x"}, json={})
+    assert r.status_code == 429
+
+
+def test_usage_limits_per_code(locked):
+    ok = {"X-Vision-Code": "alpha-123"}
+    for _ in range(3):
+        assert client.post("/api/combine", headers=ok, json={"reports": []}).status_code == 200
+    r = client.post("/api/combine", headers=ok, json={"reports": []})
+    assert r.status_code == 429 and "Usage limit" in r.json()["detail"] and int(r.headers["Retry-After"]) > 0
+    # another person's code has its own allowance
+    assert client.post("/api/combine", headers={"X-Vision-Code": "beta-456"}, json={"reports": []}).status_code == 200
+    # AI reviews have their own, tighter daily allowance
+    assert client.post("/api/ai-review", headers=ok, json={"code_id": "x"}).status_code == 404
+    r = client.post("/api/ai-review", headers=ok, json={"code_id": "x"})
+    assert r.status_code == 429 and "h." in r.json()["detail"]
+
+
+def test_limit_by_ip_when_open(monkeypatch):
+    monkeypatch.setattr(server.app.state, "limits", {"check": (2, 3600), "ai": (1, 86400), "bad_code": (2, 3600)})
+    assert server.app.state.access_codes == []
+    codes = [client.post("/api/combine", json={"reports": []}).status_code for _ in range(3)]
+    assert codes == [200, 200, 429]
+
+
+def test_cors_headers_on_refusals(locked):
+    """The phone apps run on another origin: they must be able to read a 401 to show the code box."""
+    r = client.post("/api/combine", headers={"Origin": "capacitor://localhost"}, json={})
+    assert r.status_code == 401 and r.headers["access-control-allow-origin"] == "capacitor://localhost"
+    pre = client.options("/api/check", headers={"Origin": "capacitor://localhost",
+                                                "Access-Control-Request-Method": "POST",
+                                                "Access-Control-Request-Headers": "x-vision-code"})
+    assert pre.status_code == 200

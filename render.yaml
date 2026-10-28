@@ -1,0 +1,14 @@
+# Render blueprint: New + > Blueprint > pick this repo. Fill the secret values in the Render dashboard.
+services:
+  - type: web
+    name: vision
+    runtime: docker
+    plan: starter
+    healthCheckPath: /api/health
+    envVars:
+      - key: VISION_ACCESS_CODES   # comma-separated invite codes; required before sharing the link
+        sync: false
+      - key: VISION_CHECKS_PER_HOUR
+        value: "60"
+      - key: VISION_AI_REVIEWS_PER_DAY
+        value: "10"

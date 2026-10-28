@@ -10,5 +10,6 @@ RUN useradd -m vision && chown -R vision /app
 USER vision
 EXPOSE 8000
 # Serves the API at /api and the web app at /. Set VISION_ALLOW_SERVER_AI_KEY=1 + ANTHROPIC_API_KEY
-# only if you want to pay for users' AI reviews.
-CMD ["sh", "-c", "uvicorn api.server:app --host 0.0.0.0 --port ${PORT:-8000} --proxy-headers"]
+# only if you want to pay for users' AI reviews. Set VISION_ACCESS_CODES before going public.
+# --forwarded-allow-ips '*' trusts the host's proxy for the visitor IP; keep the container itself private.
+CMD ["sh", "-c", "uvicorn api.server:app --host 0.0.0.0 --port ${PORT:-8000} --proxy-headers --forwarded-allow-ips '*'"]

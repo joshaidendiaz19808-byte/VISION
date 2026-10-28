@@ -3,10 +3,13 @@
 Keys arrive per request and are never stored or logged. Uploaded/downloaded code is parsed, never run,
 and deleted after an hour.
 """
+import collections
 import dataclasses
+import hmac
 import io
 import json
 import math
+import os
 import shutil
 import sys
 import tempfile
@@ -17,9 +20,9 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -32,6 +35,48 @@ CODE_TTL_S = 3600
 CODE_DIRS: dict[str, tuple[Path, float]] = {}
 
 app = FastAPI(title="VISION API", docs_url="/api/docs", openapi_url="/api/openapi.json")
+app.state.allow_server_ai_key = os.environ.get("VISION_ALLOW_SERVER_AI_KEY") == "1"
+# Access codes you hand out (comma-separated). Unset = open, for running on your own machine.
+app.state.access_codes = [c.strip() for c in os.environ.get("VISION_ACCESS_CODES", "").split(",") if c.strip()]
+app.state.limits = {"check": (int(os.environ.get("VISION_CHECKS_PER_HOUR", 60)), 3600),
+                    "ai": (int(os.environ.get("VISION_AI_REVIEWS_PER_DAY", 10)), 86400),
+                    "bad_code": (20, 3600)}  # stops guessing codes
+HITS: dict[tuple[str, str], collections.deque] = collections.defaultdict(collections.deque)
+
+
+def over_limit(who: str, bucket: str) -> int:
+    """Sliding-window count per person. Returns seconds until they can go again, or 0. In-memory: one server."""
+    n, window = app.state.limits[bucket]
+    q, now = HITS[(who, bucket)], time.time()
+    while q and now - q[0] > window:
+        q.popleft()
+    if len(q) >= n:
+        return int(window - (now - q[0])) + 1
+    q.append(now)
+    return 0
+
+
+@app.middleware("http")  # registered before CORS so CORS wraps it and the phone apps can read a 401/429
+async def gate(request: Request, call_next):
+    if request.method != "POST" or not request.url.path.startswith("/api/"):
+        return await call_next(request)
+    who = request.client.host if request.client else "?"
+    if app.state.access_codes:
+        code = request.headers.get("x-vision-code", "")
+        if not any(hmac.compare_digest(code.encode(), c.encode()) for c in app.state.access_codes):
+            if over_limit(who, "bad_code"):
+                return JSONResponse({"detail": "Too many wrong codes - try again later."}, status_code=429)
+            return JSONResponse({"detail": "Enter your access code." if not code else "That access code isn't valid."},
+                                status_code=401)
+        who = "code:" + code
+    wait = over_limit(who, "ai" if request.url.path == "/api/ai-review" else "check")
+    if wait:
+        when = f"{wait // 60 + 1} min" if wait < 3600 else f"{wait // 3600 + 1} h"
+        return JSONResponse({"detail": f"Usage limit reached - try again in about {when}."}, status_code=429,
+                            headers={"Retry-After": str(wait)})
+    return await call_next(request)
+
+
 # The phone apps load from capacitor://localhost (iOS) / https://localhost (Android).
 app.add_middleware(CORSMiddleware, allow_origins=["capacitor://localhost", "https://localhost", "http://localhost"],
                    allow_origin_regex=r"http://localhost:\d+", allow_methods=["*"], allow_headers=["*"])
@@ -278,9 +323,6 @@ def combine(body: dict):
                            for c in r["checks"]]} for r in body.get("reports", [])]
     return clean(merge("Results + the code behind them", reports))
 
-
-import os  # noqa: E402
-app.state.allow_server_ai_key = os.environ.get("VISION_ALLOW_SERVER_AI_KEY") == "1"
 
 WEB = ROOT / "web"
 if WEB.exists():

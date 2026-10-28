@@ -19,7 +19,10 @@ Run: `streamlit run app.py` (one page). Tests: `pytest tests/test_checks.py` —
 | `ai_review.py` | Claude (Opus 5.5) reviews the code as untrusted data, using static hits as leads — optional, needs an Anthropic key |
 
 ## Hosting
-- Login turns on when `.streamlit/secrets.toml` (or the host's secrets) has an `[auth]` section — see `.streamlit/secrets.toml.example` (Google login).
+- Web + phone apps: `VISION_ACCESS_CODES=code1,code2` makes the API invite-only (the app asks once, remembers it on the device). Unset = open, for local use only.
+- Usage limits per code (or per IP when open): `VISION_CHECKS_PER_HOUR` (default 60), `VISION_AI_REVIEWS_PER_DAY` (default 10); 20 wrong codes/hour locks an IP out. Counters are in memory — run one server instance.
+- Render: `render.yaml` blueprint (Docker, health check `/api/health`).
+- Streamlit (legacy UI) login turns on when `.streamlit/secrets.toml` (or the host's secrets) has an `[auth]` section — see `.streamlit/secrets.toml.example` (Google login).
 - Hosted users bring their own Anthropic key for the AI review unless `allow_server_ai_key = true`.
 - Deploy: Streamlit Community Cloud (point at this repo, `app.py`, paste secrets) or any Docker host (`Dockerfile`, honours `$PORT`).
 

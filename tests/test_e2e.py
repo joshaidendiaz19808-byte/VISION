@@ -199,3 +199,24 @@ def test_phone_app_mode_cross_origin(browser_page, base_url, tmp_path):
         assert not errors, errors
     finally:
         static.shutdown()
+
+
+def test_access_code_flow(browser_page, base_url, monkeypatch):
+    name, page, errors = browser_page
+    monkeypatch.setattr(server.app.state, "access_codes", ["invite-789"])
+    fresh(page, base_url)
+    page.evaluate("localStorage.clear()")
+    assert page.is_hidden("#access")
+    page.click("#sample")
+    page.wait_for_selector("#status.error")
+    assert "access code" in page.inner_text("#status") and page.is_visible("#access")
+    page.fill("#access-code", "invite-789")
+    page.click("#access-save")
+    assert page.is_hidden("#access")
+    page.click("#run")
+    assert verdict(page) in ("LOOKS REAL", "QUESTIONABLE", "LOOKS FAKE")
+    fresh(page, base_url)  # remembered on this device
+    page.click("#sample")
+    verdict(page)
+    page.evaluate("localStorage.clear()")
+    assert not errors, errors

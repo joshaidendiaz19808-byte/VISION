@@ -30,15 +30,21 @@ function status(msg, error = false) {
   $("status").className = error ? "error" : "";
 }
 
+function accessCode() {
+  try { return localStorage.getItem("vision-code") || ""; } catch { return ""; }
+}
+
 async function call(path, body, isForm) {
   let r;
+  const headers = isForm ? {} : { "Content-Type": "application/json" };
+  if (accessCode()) headers["X-Vision-Code"] = accessCode();
   try {
-    r = await fetch(API + path, isForm ? { method: "POST", body } :
-      { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    r = await fetch(API + path, { method: "POST", headers, body: isForm ? body : JSON.stringify(body) });
   } catch {
     throw new Error("Can't reach the VISION server - check your connection.");
   }
   const data = await r.json().catch(() => ({}));
+  if (r.status === 401) { $("access").hidden = false; $("access-code").focus(); }
   if (!r.ok) {
     const d = data.detail;
     throw new Error(typeof d === "string" ? d : (r.status === 413 ? "That file is too big." : `Server error (${r.status}).`));
@@ -312,3 +318,9 @@ showProvider();
 if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
   navigator.serviceWorker.register("sw.js").catch(() => {});
 }
+
+$("access-save").addEventListener("click", () => {
+  try { localStorage.setItem("vision-code", $("access-code").value.trim()); } catch { /* private mode */ }
+  $("access").hidden = true;
+  status("Code saved - tap Check it again.");
+});
