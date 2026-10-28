@@ -4,7 +4,10 @@ Keys are passed in per call and only ever live in memory: nothing here writes
 a key to disk, a log or an error message.
 """
 import io
+import ipaddress
 import json
+import os
+import socket
 import time
 import xml.etree.ElementTree as ET
 import tarfile
@@ -16,6 +19,26 @@ import requests
 
 TIMEOUT = 60
 MAX_DOWNLOAD = 300 * 1024 * 1024
+
+
+def check_public_url(url: str):
+    """User-typed URLs must point at the public internet: a hosted server must not be talked into fetching
+    its own private network (cloud metadata, internal services). VISION_ALLOW_PRIVATE_URLS=1 for local dev."""
+    from urllib.parse import urlparse
+    u = urlparse(url)
+    if u.scheme not in ("http", "https") or not u.hostname:
+        raise ValueError("Enter a full http(s) URL.")
+    if os.environ.get("VISION_ALLOW_PRIVATE_URLS") == "1":
+        return
+    try:
+        addrs = {a[4][0] for a in socket.getaddrinfo(u.hostname, u.port or 443)}
+    except socket.gaierror:
+        raise ConnectionError(f"Couldn't find {u.hostname}.") from None
+    for a in addrs:
+        ip = ipaddress.ip_address(a.split("%")[0])
+        if not ip.is_global:
+            raise PermissionError(f"{u.hostname} points at a private network address - VISION only fetches "
+                                  "public URLs.")
 
 
 def _request(method, url, headers=None, **kw):
@@ -30,6 +53,8 @@ def _request(method, url, headers=None, **kw):
         raise PermissionError(f"Access denied by {where.split('/')[2]} - check the key has read permission.")
     if r.status_code == 404:
         raise FileNotFoundError(f"Not found: {where} (private? then add a key)")
+    if 300 <= r.status_code < 400:
+        raise ConnectionError(f"{where.split('/')[2]} tried to redirect - use the final URL.")
     if r.status_code >= 400:
         raise ConnectionError(f"{where.split('/')[2]} returned HTTP {r.status_code}.")
     buf = io.BytesIO()
@@ -63,8 +88,9 @@ def github_repo(repo: str, token: str | None = None, ref: str = "HEAD") -> Path:
 def url_table(url: str, auth_header: str | None = None, auth_value: str | None = None,
               json_path: str | None = None) -> pd.DataFrame:
     """Any HTTP endpoint that returns CSV or JSON - a broker export, a lab API, an analytics API."""
+    check_public_url(url)
     headers = {auth_header: auth_value} if auth_header and auth_value else {}
-    data, ctype = _get(url, headers)
+    data, ctype = _get(url, headers, allow_redirects=False)
     if "json" in ctype or url.endswith(".json") or data.lstrip()[:1] in (b"{", b"["):
         obj = json.loads(data)
         for key in filter(None, (json_path or "").split(".")):
@@ -126,11 +152,13 @@ def mlflow_runs(host: str, experiment_ids: list[str], token: str | None = None, 
     """Every run in an MLflow experiment (self-hosted or Databricks) - one row per run, metrics + params.
     The row count is how many versions were really tried, which is what multiple-testing checks need."""
     host = host.rstrip("/")
+    check_public_url(host)
     headers = {"Authorization": f"Bearer {token}"} if token else {}
     rows, page = [], None
     while len(rows) < max_runs:
         body = {"experiment_ids": experiment_ids, "max_results": 1000, **({"page_token": page} if page else {})}
-        data = json.loads(_request("POST", f"{host}/api/2.0/mlflow/runs/search", headers, json=body)[0])
+        data = json.loads(_request("POST", f"{host}/api/2.0/mlflow/runs/search", headers, json=body,
+                                   allow_redirects=False)[0])
         for run in data.get("runs", []):
             row = {"run_id": run["info"]["run_id"], "status": run["info"].get("status"),
                    "start_time": pd.to_datetime(run["info"].get("start_time"), unit="ms")}

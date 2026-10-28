@@ -29,6 +29,7 @@ def serve(monkeypatch):
             return responses.pop(0)
         monkeypatch.setattr(requests, "request", fake)
         monkeypatch.setattr(connectors.time, "sleep", lambda s: None)
+        monkeypatch.setattr(connectors.socket, "getaddrinfo", lambda *a: [(0, 0, 0, "", ("93.184.216.34", 0))])
         return calls
     return install
 
@@ -97,3 +98,27 @@ def test_mlflow_pages_through_every_run(serve):
     assert calls[0]["url"] == "https://dbc.cloud.databricks.com/api/2.0/mlflow/runs/search"
     assert calls[1]["json"]["page_token"] == "p2"
     assert calls[0]["headers"]["Authorization"] == f"Bearer {SECRET}"
+
+
+@pytest.mark.parametrize("ip", ["127.0.0.1", "169.254.169.254", "10.0.0.5", "192.168.1.1", "::1", "fd00::1"])
+def test_private_network_urls_blocked(monkeypatch, ip):
+    monkeypatch.delenv("VISION_ALLOW_PRIVATE_URLS", raising=False)
+    monkeypatch.setattr(connectors.socket, "getaddrinfo", lambda *a: [(0, 0, 0, "", (ip, 0))])
+    monkeypatch.setattr(requests, "request", lambda *a, **k: pytest.fail("must not fetch"))
+    with pytest.raises(PermissionError):
+        connectors.url_table("https://sneaky.example.com/data.csv")
+    with pytest.raises(PermissionError):
+        connectors.mlflow_runs("https://sneaky.example.com", ["1"])
+
+
+def test_redirects_refused(serve):
+    calls = serve([FakeResponse("", 302)])
+    with pytest.raises(ConnectionError, match="redirect"):
+        connectors.url_table("https://example.com/data.csv")
+    assert calls[0]["allow_redirects"] is False
+
+
+def test_non_http_schemes_refused():
+    for url in ("file:///etc/passwd", "ftp://x.com/a", "gopher://x"):
+        with pytest.raises(ValueError):
+            connectors.url_table(url)
