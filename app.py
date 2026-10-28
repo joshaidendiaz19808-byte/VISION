@@ -9,7 +9,7 @@ import pandas as pd
 import streamlit as st
 
 sys.path.insert(0, "src")
-from checks import ab_test, code_audit, connectors, detect, integrity, ml_model, trading, merge, FAIL, WARN, PASS
+from checks import ab_test, ai_review, code_audit, connectors, detect, integrity, ml_model, trading, merge, FAIL, WARN, PASS
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -331,7 +331,21 @@ with st.expander(title, expanded=kind == "code"):
                     repos[repo] = str(got)
         code_root = repos.get(repo)
     if code_root:
-        reports.append(code_audit.run(code_root))
+        static = code_audit.run(code_root)
+        reports.append(static)
+        st.markdown("**Deeper AI review** - Claude reads the code like a skeptical reviewer and finds what "
+                    "pattern rules can't (leaks through joins, wrong metrics, labels built from the future "
+                    "elsewhere in the project). Your code is sent to the Anthropic API; it is never run.")
+        akey = st.text_input("Anthropic API key (blank = use ANTHROPIC_API_KEY)", type="password")
+        reviews = st.session_state.setdefault("ai_reviews", {})
+        if st.button("Run AI review"):
+            with st.spinner("Claude is reading the code - large projects take a few minutes…"):
+                reviews[str(code_root)] = ai_review.run(code_root, akey or None, static)
+        ai = reviews.get(str(code_root))
+        if ai:
+            if ai.get("summary"):
+                st.info(ai["summary"])
+            reports.append(ai)
 
 # ── verdict ───────────────────────────────────────────────────────────────────
 
