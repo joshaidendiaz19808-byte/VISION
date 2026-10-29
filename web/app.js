@@ -5,7 +5,7 @@
 const API = (window.VISION_API || "").replace(/\/$/, "");
 const $ = (id) => document.getElementById(id);
 const COLORS = { "LOOKS REAL": "var(--real)", "QUESTIONABLE": "var(--warn)", "LOOKS FAKE": "var(--fake)",
-                 "NOT ENOUGH TO JUDGE": "var(--dim)" };
+                 "NOT ENOUGH TO JUDGE": "var(--ink-3)" };
 const LOOKS_LIKE = { trading: "trading results", ab: "an A/B test", predictions: "model predictions",
                      data: "general data" };
 
@@ -246,40 +246,55 @@ async function runAI() {
   await render();
 }
 
+// `like this` in check text -> code font (still textContent only)
+function prose(cls, text, lead) {
+  const parts = String(text).split("`");
+  return el("div", { class: cls }, lead || null, parts.map((t, i) => (i % 2 ? el("code", { text: t }) : t)));
+}
+
 // ── verdict ─────────────────────────────────────────────────────────────────
 async function render() {
   const out = $("verdict");
   const reports = [state.result && state.result.report, state.code, state.ai && state.ai.report].filter(Boolean);
   if (!reports.length) { out.replaceChildren(); return; }
   const rep = reports.length === 1 ? reports[0] : await call("/api/combine", { reports });
-  const color = COLORS[rep.verdict] || "var(--dim)";
+  const color = COLORS[rep.verdict] || "var(--ink-3)";
   const problems = rep.checks.filter((c) => c.status === "fail" || c.status === "warn")
     .sort((a, b) => (a.status === "fail" ? 0 : 1) - (b.status === "fail" ? 0 : 1));
   const passed = rep.checks.filter((c) => c.status === "pass");
   const skipped = rep.checks.filter((c) => c.status === "skip");
 
+  const order = { fail: 0, warn: 1, pass: 2, skip: 3 };
+  const strip = [...rep.checks].sort((a, b) => order[a.status] - order[b.status])
+    .filter((c) => c.status !== "skip").map((c) => el("i", { class: c.status, title: c.name }));
+  const tag = { fail: ["FAIL", "var(--fake)"], warn: ["CHECK", "var(--warn)"] };
+  const today = new Date().toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+
   out.replaceChildren(...[
-    el("div", { class: "verdict", style: `border-color:${color}` },
+    el("div", { class: "verdict", style: `border-top-color:${color}` },
+      el("div", { class: "eyebrow" }, el("span", { text: "Verdict" }), el("span", { text: today })),
       el("div", { class: "big", style: `color:${color}`, text: rep.verdict }),
-      el("span", { class: "score", style: `color:${color};border-color:${color}`, text: rep.score }),
+      el("div", { class: "score", text: rep.score }),
+      el("div", { class: "strip", "aria-hidden": "true" }, strip),
       el("div", { class: "sub", text: (rep.n ? `${rep.n} ${rep.unit} analyzed · ` : "") + rep.kind })),
-    state.ai && state.ai.summary ? el("div", { class: "summary", text: "AI review: " + state.ai.summary }) : null,
-    problems.length ? el("h2", { text: "What's wrong" }) : null,
-    problems.map((c) => {
+    state.ai && state.ai.summary ? el("div", { class: "summary", text: state.ai.summary }) : null,
+    problems.length ? el("h2", { text: `What doesn't hold up (${problems.length})` }) : null,
+    problems.map((c, i) => {
       const locs = (c.detail && c.detail.locations) || [];
       return el("div", { class: "problem" },
-        el("div", { class: "name" }, el("span", { class: "mark", style: `color:${c.status === "fail" ? "var(--fake)" : "var(--warn)"}`,
-          text: c.status === "fail" ? "✗" : "!" }), c.name),
-        el("div", { class: "why", text: c.reason }),
-        c.fix ? el("div", { class: "fix", text: "Fix: " + c.fix }) : null,
-        locs.length > 1 ? el("details", {}, el("summary", { text: `All ${locs.length} places` }),
-          el("pre", { text: locs.map((l) => `${l.file}:${l.line}  ${l.code || ""}`).join("\n") })) : null);
+        el("span", { class: "no", text: String(i + 1).padStart(2, "0") }),
+        el("div", {},
+          el("div", { class: "name" }, el("span", { class: "tag", style: `color:${tag[c.status][1]}`, text: tag[c.status][0] }), c.name),
+          prose("why", c.reason),
+          c.fix ? prose("fix", c.fix, el("b", { text: "FIX" })) : null,
+          locs.length > 1 ? el("details", {}, el("summary", { text: `All ${locs.length} places` }),
+            el("pre", { text: locs.map((l) => `${l.file}:${l.line}  ${l.code || ""}`).join("\n") })) : null));
     }),
     !problems.length && passed.length ? el("div", { class: "summary",
-      text: "Passed every check VISION could run. Still confirm it on fresh data before betting on it." }) : null,
+      text: "Passed every check VISION could run. Still confirm it on fresh data before you bet on it." }) : null,
     el("details", { class: "passed" }, el("summary", { text: `Passed (${passed.length}) · Couldn't run (${skipped.length})` }),
-      el("ul", {}, passed.map((c) => el("li", { text: "✓ " + c.name })),
-        skipped.map((c) => el("li", { text: `– ${c.name} — ${c.reason}` }))))].flat().filter(Boolean));
+      el("ul", {}, passed.map((c) => el("li", {}, el("span", { style: "color:var(--real)", text: "PASS" }), c.name)),
+        skipped.map((c) => el("li", {}, el("span", { text: "SKIP" }), `${c.name} - ${c.reason}`))))].flat().filter(Boolean));
   out.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
@@ -290,7 +305,7 @@ $("provider").addEventListener("change", showProvider);
 $("file").addEventListener("change", () => {
   const f = $("file").files[0];
   state.sample = false; state.result = null; state.opt = {}; $("options").hidden = true;
-  $("file-name").textContent = f ? f.name : "Any layout - VISION figures it out";
+  $("file-name").textContent = f ? f.name : "Any layout - VISION works out the columns";
   $("drop-single").classList.toggle("has", !!f);
 });
 for (const id of ["ml-train", "ml-test", "ml-pred"]) $(id).addEventListener("change", () => {

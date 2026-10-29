@@ -5,9 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>VISION</title>
   <meta name="description" content="Are your results real? Check trades, experiments, models, data and the code behind them.">
-  <meta name="theme-color" content="#0E1117">
+  <meta name="theme-color" content="#F3F0E8" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#12110E" media="(prefers-color-scheme: dark)">
   <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icons/icon-192.png">
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
@@ -16,103 +17,113 @@
 <body>
 <main>
   <header>
-    <h1>VISION</h1>
-    <p class="tagline">Are your results real? Plug in what you're testing and get the truth.</p>
+    <div class="masthead"><span class="mark">Vision</span><span class="meta">Results audit</span></div>
+    <h1>Check your results <em>before</em> you trust them.</h1>
+    <p class="tagline">Backtests, A/B tests, models, spreadsheets, and the code that made them. VISION runs the tests a skeptical reviewer would, and tells you what doesn't hold up.</p>
   </header>
 
-  <section>
-    <div class="label">What are you checking?</div>
-    <div class="chips" id="kinds" role="tablist">
-      <button data-kind="auto" class="on">Auto-detect</button>
-      <button data-kind="trading">Trading</button>
-      <button data-kind="ab">A/B test</button>
-      <button data-kind="ml">ML / AI model</button>
-      <button data-kind="data">Any data</button>
-      <button data-kind="code">Code only</button>
+  <section class="step">
+    <span class="step-no">01</span>
+    <div>
+      <div class="label step-head">What are you checking?</div>
+      <div class="chips" id="kinds" role="tablist">
+        <button data-kind="auto" class="on">Auto-detect</button>
+        <button data-kind="trading">Trading</button>
+        <button data-kind="ab">A/B test</button>
+        <button data-kind="ml">ML model</button>
+        <button data-kind="data">Any data</button>
+        <button data-kind="code">Code only</button>
+      </div>
     </div>
   </section>
 
-  <!-- results -->
-  <section class="card" id="results-card">
-    <div class="seg" id="source">
-      <button data-src="upload" class="on">Upload a file</button>
-      <button data-src="connect">Connect an account</button>
-    </div>
+  <section class="step card" id="results-card">
+    <span class="step-no">02</span>
+    <div>
+      <div class="label step-head">Your results</div>
+      <div class="seg" id="source">
+        <button data-src="upload" class="on">Upload a file</button>
+        <button data-src="connect">Connect an account</button>
+      </div>
 
-    <div id="upload-pane">
-      <label class="drop" id="drop-single">
-        <input type="file" id="file" accept=".csv,.xlsx,.xls">
-        <span class="drop-main">Tap to choose a CSV or Excel file</span>
-        <span class="drop-sub" id="file-name">Any layout - VISION figures it out</span>
-      </label>
-      <div id="ml-files" hidden>
-        <label class="drop small"><input type="file" id="ml-train" accept=".csv,.xlsx"><span class="drop-main">Train table</span><span class="drop-sub" data-for="ml-train">optional</span></label>
-        <label class="drop small"><input type="file" id="ml-test" accept=".csv,.xlsx"><span class="drop-main">Test table</span><span class="drop-sub" data-for="ml-test">optional</span></label>
-        <label class="drop small"><input type="file" id="ml-pred" accept=".csv,.xlsx"><span class="drop-main">Predictions (actual vs predicted)</span><span class="drop-sub" data-for="ml-pred">optional</span></label>
+      <div id="upload-pane">
+        <label class="drop" id="drop-single">
+          <input type="file" id="file" accept=".csv,.xlsx,.xls">
+          <span class="drop-main">Choose a CSV or Excel file</span>
+          <span class="drop-sub" id="file-name">Any layout - VISION works out the columns</span>
+        </label>
+        <div id="ml-files" hidden>
+          <label class="drop small"><input type="file" id="ml-train" accept=".csv,.xlsx"><span class="drop-main">Train table</span><span class="drop-sub" data-for="ml-train">optional</span></label>
+          <label class="drop small"><input type="file" id="ml-test" accept=".csv,.xlsx"><span class="drop-main">Test table</span><span class="drop-sub" data-for="ml-test">optional</span></label>
+          <label class="drop small"><input type="file" id="ml-pred" accept=".csv,.xlsx"><span class="drop-main">Predictions (actual vs predicted)</span><span class="drop-sub" data-for="ml-pred">optional</span></label>
+        </div>
+        <button class="link" id="sample">No file handy? Run the sample backtest</button>
       </div>
-      <button class="link" id="sample">No file? Try a sample</button>
-    </div>
 
-    <div id="connect-pane" hidden>
-      <select id="provider">
-        <option value="ibkr">Interactive Brokers (Flex Query)</option>
-        <option value="alpaca">Alpaca</option>
-        <option value="url">Any API / URL (CSV or JSON)</option>
-      </select>
-      <div class="fields" data-provider="ibkr">
-        <p class="hint">One-time setup in IBKR Client Portal: Reports → Flex Queries → Activity query with the Trades section (FIFO P/L Realized + Cost Basis), then Flex Web Service → token.</p>
-        <input id="ibkr-token" type="password" placeholder="Flex token" autocomplete="off">
-        <input id="ibkr-query" placeholder="Query ID" inputmode="numeric">
+      <div id="connect-pane" hidden>
+        <select id="provider">
+          <option value="ibkr">Interactive Brokers (Flex Query)</option>
+          <option value="alpaca">Alpaca</option>
+          <option value="url">Any API / URL (CSV or JSON)</option>
+        </select>
+        <div class="fields" data-provider="ibkr">
+          <p class="hint">One-time setup in IBKR Client Portal: Reports → Flex Queries → Activity query with the Trades section (FIFO P/L Realized + Cost Basis), then Flex Web Service → token.</p>
+          <input id="ibkr-token" type="password" placeholder="Flex token" autocomplete="off">
+          <input id="ibkr-query" placeholder="Query ID" inputmode="numeric">
+        </div>
+        <div class="fields" data-provider="alpaca" hidden>
+          <input id="alpaca-id" placeholder="API key ID" autocomplete="off">
+          <input id="alpaca-secret" type="password" placeholder="Secret key" autocomplete="off">
+          <label class="check"><input type="checkbox" id="alpaca-paper" checked> Paper account</label>
+        </div>
+        <div class="fields" data-provider="url" hidden>
+          <input id="url" placeholder="https://… returns CSV or JSON" inputmode="url">
+          <input id="url-header" placeholder="Auth header name (optional), e.g. Authorization">
+          <input id="url-key" type="password" placeholder="Key / token (optional)" autocomplete="off">
+          <input id="url-path" placeholder="JSON path to rows (optional), e.g. data.results">
+        </div>
+        <p class="hint">Keys are used for this one check. They aren't saved or logged.</p>
       </div>
-      <div class="fields" data-provider="alpaca" hidden>
-        <input id="alpaca-id" placeholder="API key ID" autocomplete="off">
-        <input id="alpaca-secret" type="password" placeholder="Secret key" autocomplete="off">
-        <label class="check"><input type="checkbox" id="alpaca-paper" checked> Paper account</label>
-      </div>
-      <div class="fields" data-provider="url" hidden>
-        <input id="url" placeholder="https://… returns CSV or JSON" inputmode="url">
-        <input id="url-header" placeholder="Auth header name (optional), e.g. Authorization">
-        <input id="url-key" type="password" placeholder="Key / token (optional)" autocomplete="off">
-        <input id="url-path" placeholder="JSON path to rows (optional), e.g. data.results">
-      </div>
-      <p class="hint">🔒 Keys are sent only to check your results, never saved or logged.</p>
-    </div>
 
-    <div id="options" hidden></div>
-    <button class="primary" id="run">Check it</button>
+      <div id="options" hidden></div>
+      <button class="primary" id="run">Check it</button>
+    </div>
   </section>
 
-  <!-- code -->
-  <section class="card">
+  <section class="step card">
+    <span class="step-no">03</span>
     <details id="code-card">
-      <summary id="code-title">Also check the code that produced this <span class="pill">recommended</span></summary>
-      <p class="hint">VISION reads the code - it never runs it. Catches look-ahead, leakage, test-set tuning, seed fishing, missing costs and more in Python files and notebooks.</p>
+      <summary id="code-title">Also check the code that produced this <span class="pill">Recommended</span></summary>
+      <p class="hint">VISION reads the code and never runs it. It looks for look-ahead, leakage, tuning on the test set, seed fishing, missing costs and more, in Python files and notebooks.</p>
       <label class="drop small">
         <input type="file" id="code-files" multiple accept=".py,.ipynb,.zip">
-        <span class="drop-main">Choose .py / .ipynb / .zip</span>
+        <span class="drop-main">Choose .py, .ipynb or .zip</span>
         <span class="drop-sub" id="code-names">or use a GitHub repo below</span>
       </label>
       <input id="repo" placeholder="GitHub repo, e.g. owner/name" autocapitalize="off" autocorrect="off">
       <input id="gh-token" type="password" placeholder="GitHub token (private repos only)" autocomplete="off">
       <button class="secondary" id="run-code">Audit the code</button>
       <div id="ai" hidden>
-        <p class="hint"><b>Deeper AI review:</b> Claude reads the code like a skeptical reviewer and finds what pattern rules can't. Your code is sent to the Anthropic API; it's never run.</p>
+        <p class="hint" style="margin-top:18px"><b>Second opinion from Claude.</b> It reads the code the way a hostile reviewer would and catches what fixed rules miss. The code goes to Anthropic's API; it's never run.</p>
         <input id="ai-key" type="password" placeholder="Anthropic API key" autocomplete="off">
         <button class="secondary" id="run-ai">Run AI review</button>
       </div>
     </details>
   </section>
 
-  <section class="card" id="access" hidden>
-    <div class="label">Access code</div>
-    <p class="hint">This VISION server is invite-only. Enter the code you were given - it's remembered on this device.</p>
-    <input id="access-code" type="password" placeholder="Access code" autocomplete="off" autocapitalize="off">
-    <button class="secondary" id="access-save">Save code</button>
+  <section class="step" id="access" hidden>
+    <span class="step-no">—</span>
+    <div>
+      <div class="label step-head">Access code</div>
+      <p class="hint">This server is invite-only. Enter the code you were given; this device will remember it.</p>
+      <input id="access-code" type="password" placeholder="Access code" autocomplete="off" autocapitalize="off">
+      <button class="secondary" id="access-save">Save code</button>
+    </div>
   </section>
 
   <div id="status" role="status" aria-live="polite"></div>
   <section id="verdict"></section>
-  <footer>Forensic checks are red flags for a human to look at, not proof. Confirm anything that passes on fresh data.</footer>
+  <footer><span>Statistical red flags, not proof. Confirm anything that passes on data you haven't seen.</span><span>VISION</span></footer>
 </main>
 <script src="config.js"></script>
 <script src="app.js"></script>
