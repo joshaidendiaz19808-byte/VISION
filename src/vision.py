@@ -32,9 +32,12 @@ def test_out_of_sample(returns, split=0.7):
     }
 
 
-def test_remove_best(returns):
-    cut = returns.quantile(0.95)
-    passed = returns[returns < cut].sum() > 0
+def test_remove_best(returns, top_frac=0.05):
+    # Drop the top 5% of trades by count (not by value threshold), so ties at
+    # the top can't wipe out every trade.
+    n_drop = max(1, int(np.ceil(len(returns) * top_frac)))
+    rest = returns.sort_values(ascending=False).iloc[n_drop:]
+    passed = rest.sum() > 0
     return {
         "passed": passed,
         "reason": None if passed else "Your profit is riding on a few lucky big wins. Drop your top 5% of trades and the rest lose money.",
@@ -69,7 +72,10 @@ def test_monte_carlo(returns, n_sims=10000, seed=42):
 
 def verdict(trades_df, cost_bps=5.0):
     df = trades_df.sort_values("date")
-    returns = df["return_pct"].astype(float).reset_index(drop=True)
+    returns = df["return_pct"].astype(float)
+    returns = returns[np.isfinite(returns)].reset_index(drop=True)  # drop NaN/inf
+    if len(returns) == 0:
+        raise ValueError("No usable numeric returns found.")
     tests = [
         test_sample_size(returns),
         test_out_of_sample(returns),
